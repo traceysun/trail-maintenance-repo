@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Build/temp
+*_raw.glb
+node_modules/
+*.log
+
+# Outputs
+/dist/

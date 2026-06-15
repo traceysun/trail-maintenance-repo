@@ -1,0 +1,61 @@
+// Trail Maintenance — all player-visible strings. Swap this file to localize.
+export const STR = {
+  title: "TRAIL MAINTENANCE",
+  subtitle: "PARK SERVICE WORK ORDER 6-114",
+  begin: "BEGIN SHIFT",
+  controlsDesktop: "WASD — move · MOUSE — look · E — interact · F — flashlight · click to lock mouse",
+  hintFlashlight: "Press F for flashlight",
+  controlsTouch: "LEFT SIDE — move · RIGHT SIDE — look · buttons — interact / light",
+  clickToLook: "Click to look around",
+  loading: "REWINDING TAPE…",
+  paused: "PAUSED — click to resume",
+
+  objClear: "OBJECTIVE: Clear storm damage on Trail 6",
+  objShed: "OBJECTIVE: Check the maintenance shed",
+  objOutpost: "OBJECTIVE: Report to the ranger outpost",
+  objErase: "OBJECTIVE: ERASE TRAIL 6",
+  objReturn: "OBJECTIVE: Return to the trailhead",
+
+  taskBranches: "Clear fallen branches",
+  taskMarkers: "Repaint trail markers",
+  taskShedSign: "Inspect the posted notice",
+  taskMap: "Check the wall map",
+  taskRadio: "Check the radio",
+  taskErase: "Erase red markers",
+
+  pBranch: "[E] Clear branch",
+  pPaint: "[E] Repaint marker",
+  pErase: "[E] Erase marker",
+  pRead: "[E] Read",
+  pRadio: "[E] Check radio",
+  close: "[E] Put down",
+
+  signTrailhead: "TRAIL 6 — CLOSED FOR MAINTENANCE\nSTORM DAMAGE AHEAD\nAUTHORIZED PERSONNEL ONLY",
+  signParking: "TRAILHEAD PARKING\nTRAIL 6 ACCESS →\nPACK IN · PACK OUT",
+  noteParking: "TRAILHEAD PARKING — DAY USE ONLY\n\nYour vehicle is the only one here.\nThe lot is empty. The gate at the road was open.\n\nTrail 6 begins at the treeline ahead.",
+  signTrailheadChanged: "TRAIL 6 — OPEN\nALL VISITORS WELCOME\nSTAY ON THE MARKED PATH",
+  signScenic: "SCENIC LOOP — 1.2 MILES",
+  noteShed: "POSTED — DISTRICT OFFICE\n\nTRAIL CLOSED.\nDO NOT RESTORE.\n\nDamage is not the reason.\nLeave the markers faded.\nLet the brush take the line.\n\n— R. ALDEN, MAINT. SUPERVISOR",
+  noteWallMap: "PARK TRAIL SYSTEM — SECTOR 4\n\nTRAILS 5, 6, 9: WITHDRAWN.\n\nDO NOT RESTORE OLD CONNECTORS.\n\nIf a route is repainted in error,\nremove every blaze the same night.\nDo not leave a continuous line\nbetween the markers and the gate.",
+  noteDesk: "...keeps coming back to the same thing. The paint\nis the problem, not the path. A blaze isn't a sign,\nit's a signature. Markers give the trail permission.\n\nWe stopped painting in March. It stopped moving\nin April. Nobody writes this in the log.",
+  noteMissing: "NOTICE BOARD — TRAIL ADVISORIES\n\n[ corner of a torn page ]\n[ corner of a torn page ]\n[ a rectangle of unfaded wood\n  where Trail 6's notice hung ]",
+  noteRadioDead: "The handset is cold. The battery\ncompartment is empty. The cord\nis wrapped neatly, like someone\nclosed up and meant it.",
+
+  radioContinue: "…CONTINUE RESTORATION…",
+  radioConfirmed: "…RESTORATION CONFIRMED…",
+
+  toastBranchesDone: "Storm damage cleared.",
+  toastMarkersDone: "Markers repainted.",
+  toastRedFound: "These markers are not yours.",
+  toastSilence: "The forest has gone quiet.",
+  toastRepaint: "Something repainted a marker behind you.",
+
+  endGoodTitle: "UNMARKED",
+  endGoodText: "The park forgot the way.",
+  endBadTitle: "PUBLIC ACCESS",
+  endBadText: "Trail restored.",
+  endRestart: "WORK ANOTHER SHIFT",
+
+  counterErase: (n, total) => `Red markers remaining: ${n} / ${total}`,
+  counterDawn: "Dawn is coming.",
+};

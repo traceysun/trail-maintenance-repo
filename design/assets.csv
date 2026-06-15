@@ -1,0 +1,22 @@
+id,role,type,description,size/ratio,style line ref,source
+sfx_wind,ambient forest loop,audio,"steady cold wind moving through pine forest at dusk, faint leaf rustle, no music",12s,"quiet rural dread at dusk",generate
+sfx_steps,player footsteps,audio,"slow heavy footsteps on wet dirt and gravel trail, four steps",3s,"quiet rural dread at dusk",generate
+sfx_static,radio static burst,audio,"harsh analog handheld radio static burst with squelch",4s,"dim ambient light, dread",generate
+sfx_hammer,distant scripted event,audio,"faraway slow hammering on wood deep in a forest, echo, sparse",5s,"quiet rural dread at dusk",generate
+sfx_brush,marker paint interaction,audio,"wet paintbrush strokes on rough tree bark, two strokes",2s,"utility maintenance objects",generate
+vo_dispatch_continue,radio dispatch line,voice,"Continue restoration.",-,"flat procedural dispatch voice",generate
+vo_dispatch_confirmed,radio dispatch line,voice,"Restoration confirmed.",-,"flat procedural dispatch voice",generate
+tex_dirt,trail ground tile,texture,"procedural 64px dithered wet dirt, seamless wrap",64px tile,"wet browns",procedural
+tex_floor,forest floor tile,texture,"procedural 64px mossy ground with leaf litter, seamless",64px tile,"muted mossy greens",procedural
+tex_bark,tree trunk tile,texture,"procedural 64px vertical bark striations, seamless",64px tile,"cold grays/browns",procedural
+tex_planks,structure walls,texture,"procedural 64px weathered wood planks, rows aligned across edges",64px tile,"weathered wood",procedural
+tex_metal,shed/outpost roof,texture,"procedural 64px corrugated metal, seams wrap",64px tile,"cold grays",procedural
+tex_paper,notes/signs/map,texture,"procedural canvas with typed text, aged paper",512px,"faded utility white",procedural
+mesh_pine,instanced forest tree,3d,"low-poly faceted pine, cone tiers + trunk, instanced",~6 units tall,"chunky angular silhouettes",procedural
+mesh_shed,walkable maintenance shed,3d,"modular box geometry walls/roof/door, collision",4x3x3,"weathered wood",procedural
+mesh_outpost,walkable ranger outpost,3d,"modular geometry interior with desk/map/radio, collision",6x5x3,"abandoned utilitarian",procedural
+mesh_bridge,creek bridge,3d,"plank bridge with rails, collision",6x2,"weathered wood",procedural
+props_set,set dressing,3d,"desk, bed frame, chairs, crates, barrel, tools, fire ring, signs, radio — non-collision-critical",various,"sparse props",procedural
+figure_dark,glimpse silhouette,3d,"static dark humanoid silhouette, non-rigged, appears briefly",1.9 units,"horror signal restraint",procedural
+img_thumbnail,store card,image,"16:9 cover: foggy dusk trail with red marker on tree, title readable",16:9,"full formula",generate
+img_favicon,store icon,image,"1:1 red trail marker blaze on dark bark",1:1,"full formula",generate

@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Trail Maintenance</title>
+<style>
+:root{ --amber:#d8cbA8; --red:#b3261e; }
+html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"Courier New",monospace;
+  -webkit-user-select:none;user-select:none;touch-action:none}
+#c{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+/* ---------- VHS overlay ---------- */
+#vhs{position:fixed;inset:0;pointer-events:none;z-index:5;mix-blend-mode:overlay;opacity:.55;
+  background:repeating-linear-gradient(0deg,rgba(0,0,0,.28) 0 1px,transparent 1px 3px)}
+#noise{position:fixed;inset:-256px;pointer-events:none;z-index:6;opacity:.06;background-repeat:repeat;
+  animation:nz .42s steps(6) infinite}
+@keyframes nz{0%{transform:translate(0,0)}20%{transform:translate(-90px,40px)}40%{transform:translate(60px,-70px)}
+ 60%{transform:translate(-40px,-90px)}80%{transform:translate(80px,60px)}100%{transform:translate(0,0)}}
+#vig{position:fixed;inset:0;pointer-events:none;z-index:7;
+  background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
+#tracking{position:fixed;left:0;right:0;height:42px;z-index:8;pointer-events:none;opacity:0;
+  background:linear-gradient(0deg,transparent,rgba(255,255,255,.10),transparent);filter:blur(1px)}
+/* ---------- HUD ---------- */
+.hud{position:fixed;z-index:10;color:var(--amber);text-shadow:0 0 6px rgba(216,203,168,.35),1px 0 0 rgba(255,0,60,.18),-1px 0 0 rgba(0,180,255,.16)}
+#timecode{top:10px;right:14px;font-size:13px;letter-spacing:2px;opacity:.8}
+#rec{top:10px;left:14px;font-size:13px;letter-spacing:2px;opacity:.85}
+#rec b{color:#c2342a;animation:blink 1.6s steps(1) infinite}
+@keyframes blink{50%{opacity:.15}}
+#checklist{top:38px;left:14px;font-size:13px;line-height:1.7;max-width:330px;white-space:pre-line}
+#checklist .obj{letter-spacing:1px;margin-bottom:2px}
+#checklist .tk{opacity:.85;font-size:12px}
+#checklist .done{opacity:.45;text-decoration:line-through}
+#counter{top:auto;bottom:64px;left:14px;font-size:13px;letter-spacing:1px}
+#dawn{bottom:84px;left:14px;font-size:12px;color:#c98c5a;opacity:0;transition:opacity 2s}
+#prompt{left:50%;bottom:22%;transform:translateX(-50%);font-size:15px;letter-spacing:1px;opacity:0;transition:opacity .15s}
+#toast{left:50%;top:30%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;opacity:0;transition:opacity .8s;font-style:italic}
+#radioline{left:50%;bottom:14%;transform:translateX(-50%);font-size:14px;letter-spacing:3px;opacity:0;color:#cfd6c8}
+#dot{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1px;background:rgba(216,203,168,.7);z-index:10;border-radius:50%}
+/* ---------- reading overlay ---------- */
+#read{position:fixed;inset:0;z-index:20;display:none;background:rgba(4,6,7,.78);backdrop-filter:blur(1px)}
+#readpaper{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-.6deg);
+  background:#cfc6ae;color:#262019;padding:34px 38px;max-width:min(560px,84vw);font-size:15px;line-height:1.8;
+  white-space:pre-wrap;box-shadow:0 18px 60px rgba(0,0,0,.8);border:1px solid #9d9479}
+#readclose{position:absolute;left:50%;bottom:8%;transform:translateX(-50%);color:var(--amber);font-size:13px;letter-spacing:2px}
+/* ---------- fade & endings ---------- */
+#fade{position:fixed;inset:0;background:#000;z-index:30;opacity:1;transition:opacity 2.5s;pointer-events:none}
+#ending{position:fixed;inset:0;z-index:40;display:none;background:#000;color:var(--amber);text-align:center}
+#ending .in{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);width:90%}
+#endtitle{font-size:30px;letter-spacing:10px;margin-bottom:26px}
+#endtext{font-size:16px;letter-spacing:2px;opacity:.85}
+#endbtn{margin-top:60px;display:inline-block;border:1px solid var(--amber);padding:12px 26px;font-size:13px;
+  letter-spacing:3px;cursor:pointer;color:var(--amber);background:none;font-family:inherit}
+/* ---------- start screen ---------- */
+#start{position:fixed;inset:0;z-index:50;background:#0b0e10;color:var(--amber);text-align:center;cursor:pointer}
+#start .in{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);width:92%}
+#h1{font-size:clamp(26px,6vw,44px);letter-spacing:12px;text-shadow:2px 0 0 rgba(255,0,60,.25),-2px 0 0 rgba(0,180,255,.22)}
+#h2{font-size:12px;letter-spacing:4px;opacity:.6;margin-top:14px}
+#beginbtn{margin-top:70px;display:inline-block;border:1px solid var(--amber);padding:14px 34px;font-size:14px;letter-spacing:4px}
+#ctl{margin-top:36px;font-size:12px;opacity:.55;letter-spacing:1px;line-height:1.9}
+/* ---------- touch controls ---------- */
+.tbtn{position:fixed;z-index:12;width:64px;height:64px;border:1px solid rgba(216,203,168,.5);border-radius:50%;
+  color:var(--amber);font-size:20px;line-height:64px;text-align:center;background:rgba(10,12,12,.35);display:none}
+#btnE{right:24px;bottom:96px}
+#btnF{right:104px;bottom:36px}
+#stick{position:fixed;z-index:11;width:110px;height:110px;border:1px solid rgba(216,203,168,.25);border-radius:50%;
+  left:30px;bottom:40px;display:none}
+#nub{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px;border-radius:50%;background:rgba(216,203,168,.3)}
+#dev{position:fixed;bottom:4px;right:6px;color:#0f0;font:11px monospace;z-index:60;display:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vhs"></div><div id="noise"></div><div id="vig"></div><div id="tracking"></div>
+<div class="hud" id="rec"><b>●</b> REC</div>
+<div class="hud" id="timecode">PM 7:42</div>
+<div class="hud" id="checklist"></div>
+<div class="hud" id="counter"></div>
+<div class="hud" id="dawn"></div>
+<div class="hud" id="prompt"></div>
+<div class="hud" id="toast"></div>
+<div class="hud" id="radioline"></div>
+<div id="dot"></div>
+<div id="read"><div id="readpaper"></div><div id="readclose"></div></div>
+<div id="fade"></div>
+<div id="ending"><div class="in"><div id="endtitle"></div><div id="endtext"></div><button id="endbtn"></button></div></div>
+<div id="start"><div class="in">
+  <div id="h1"></div><div id="h2"></div>
+  <div id="beginbtn"></div><div id="ctl"></div>
+</div></div>
+<div id="stick"><div id="nub"></div></div>
+<div class="tbtn" id="btnE">E</div><div class="tbtn" id="btnF">⚲</div>
+<div id="dev"></div>
+<script type="module" src="./game.js"></script>
+</body>
+</html>
