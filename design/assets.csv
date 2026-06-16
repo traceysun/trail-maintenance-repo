@@ -16,6 +16,7 @@ mesh_pine,instanced forest tree,3d,"low-poly faceted pine, cone tiers + trunk, i
 mesh_shed,walkable maintenance shed,3d,"modular box geometry walls/roof/door, collision",4x3x3,"weathered wood",procedural
 mesh_outpost,walkable ranger outpost,3d,"modular geometry interior with desk/map/radio, collision",6x5x3,"abandoned utilitarian",procedural
 mesh_bridge,creek bridge,3d,"plank bridge with rails, collision",6x2,"weathered wood",procedural
+mesh_fallen_log,blocking trail branches,3d,"Higgsfield-generated textured fallen pine log, with procedural high-detail fallback and heavy roll/drag animation",4.4m long,"rough bark, snapped pale ends, moss patches",generate
 props_set,set dressing,3d,"desk, bed frame, chairs, crates, barrel, tools, fire ring, signs, radio — non-collision-critical",various,"sparse props",procedural
 figure_dark,glimpse silhouette,3d,"static dark humanoid silhouette, non-rigged, appears briefly",1.9 units,"horror signal restraint",procedural
 img_thumbnail,store card,image,"16:9 cover: foggy dusk trail with red marker on tree, title readable",16:9,"full formula",generate

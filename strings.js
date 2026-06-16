@@ -23,15 +23,15 @@ export const STR = {
   taskRadio: "Check the radio",
   taskErase: "Erase red markers",
 
-  pBranch: "[E] Clear branch",
+  pBranch: "Hold [E] Move log",
   pPaint: "[E] Repaint marker",
   pErase: "[E] Erase marker",
   pRead: "[E] Read",
   pRadio: "[E] Check radio",
   close: "[E] Put down",
 
-  signTrailhead: "TRAIL 6 — CLOSED FOR MAINTENANCE\nSTORM DAMAGE AHEAD\nAUTHORIZED PERSONNEL ONLY",
-  signParking: "TRAILHEAD PARKING\nTRAIL 6 ACCESS →\nPACK IN · PACK OUT",
+  signTrailhead: "LOST PINES NATIONAL PARK\nTRAIL 6 — CLOSED FOR MAINTENANCE\nSTORM DAMAGE AHEAD\nAUTHORIZED PERSONNEL ONLY",
+  signParking: "LOST PINES NATIONAL PARK\nTRAILHEAD PARKING\nTRAIL 6 ACCESS →\nPACK IN · PACK OUT",
   noteParking: "TRAILHEAD PARKING — DAY USE ONLY\n\nYour vehicle is the only one here.\nThe lot is empty. The gate at the road was open.\n\nTrail 6 begins at the treeline ahead.",
   signTrailheadChanged: "TRAIL 6 — OPEN\nALL VISITORS WELCOME\nSTAY ON THE MARKED PATH",
   signScenic: "SCENIC LOOP — 1.2 MILES",
@@ -49,6 +49,7 @@ export const STR = {
   toastRedFound: "These markers are not yours.",
   toastSilence: "The forest has gone quiet.",
   toastRepaint: "Something repainted a marker behind you.",
+  toastRain: "A hard rain settles in.",
 
   endGoodTitle: "UNMARKED",
   endGoodText: "The park forgot the way.",

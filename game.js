@@ -19,7 +19,8 @@ const DEV = new URLSearchParams(location.search).has("dev");
 
 /* ============================ audio ============================ */
 const AudioSys = {
-  ctx:null, master:null, windGain:null, cricketGain:null, buffers:{}, ready:false,
+  ctx:null, master:null, windGain:null, cricketGain:null, rainGain:null, rainSource:null,
+  rainDropTimer:null, buffers:{}, ready:false,
   async init(){
     this.ctx = new (window.AudioContext||window.webkitAudioContext)();
     const c=this.ctx;
@@ -46,10 +47,61 @@ const AudioSys = {
     // procedural crickets — sparse, quiet
     this.cricketGain=c.createGain(); this.cricketGain.gain.value=0.0; this.cricketGain.connect(this.master);
     this._cricketLoop();
+    this.rainGain=c.createGain(); this.rainGain.gain.value=0.0; this.rainGain.connect(this.master);
     this.ready=true;
   },
   setWind(v,t=2){ if(this.windGain) this.windGain.gain.linearRampToValueAtTime(v,this.ctx.currentTime+t); },
   setCrickets(v,t=2){ if(this.cricketGain) this.cricketGain.gain.linearRampToValueAtTime(v,this.ctx.currentTime+t); },
+  setRain(v,t=2){
+    if(!this.rainGain) return;
+    const c=this.ctx;
+    this.rainGain.gain.cancelScheduledValues(c.currentTime);
+    this.rainGain.gain.setValueAtTime(this.rainGain.gain.value,c.currentTime);
+    this.rainGain.gain.linearRampToValueAtTime(v,c.currentTime+t);
+  },
+  startRain(v=0.34,t=5){
+    if(!this.ctx) return;
+    const c=this.ctx;
+    if(!this.rainGain){ this.rainGain=c.createGain(); this.rainGain.gain.value=0; this.rainGain.connect(this.master); }
+    if(!this.rainSource){
+      const len=c.sampleRate*3.5;
+      const b=c.createBuffer(2,len,c.sampleRate);
+      for(let ch=0;ch<2;ch++){
+        const d=b.getChannelData(ch);
+        let low=0, mid=0;
+        for(let i=0;i<len;i++){
+          const n=Math.random()*2-1;
+          low=low*0.985+n*0.015;
+          mid=mid*0.72+n*0.28;
+          const hiss=(Math.random()*2-1)*0.34;
+          d[i]=(mid*0.75+low*0.35+hiss)*0.55;
+        }
+      }
+      const s=c.createBufferSource(); s.buffer=b; s.loop=true;
+      const hp=c.createBiquadFilter(); hp.type="highpass"; hp.frequency.value=280;
+      const lp=c.createBiquadFilter(); lp.type="lowpass"; lp.frequency.value=5200;
+      const shelf=c.createBiquadFilter(); shelf.type="highshelf"; shelf.frequency.value=2400; shelf.gain.value=-5;
+      s.connect(hp); hp.connect(lp); lp.connect(shelf); shelf.connect(this.rainGain); s.start();
+      this.rainSource=s;
+      this._rainDropLoop();
+    }
+    this.setRain(v,t);
+  },
+  _rainDropLoop(){
+    if(this.rainDropTimer || !this.ctx || !this.rainGain) return;
+    const drop=()=>{
+      if(!this.rainGain){ this.rainDropTimer=null; return; }
+      const c=this.ctx, len=0.055, b=c.createBuffer(1,Math.floor(c.sampleRate*len),c.sampleRate), d=b.getChannelData(0);
+      for(let i=0;i<d.length;i++){ const t=i/d.length; d[i]=(Math.random()*2-1)*Math.pow(1-t,7); }
+      const s=c.createBufferSource(); s.buffer=b;
+      const pan=c.createStereoPanner(); pan.pan.value=R(-0.85,0.85);
+      const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=R(1200,3600); bp.Q.value=R(0.8,1.8);
+      const g=c.createGain(); g.gain.value=R(0.012,0.04);
+      s.connect(bp); bp.connect(pan); pan.connect(g); g.connect(this.rainGain); s.start();
+      this.rainDropTimer=setTimeout(drop,R(70,180));
+    };
+    drop();
+  },
   _cricketLoop(){
     const c=this.ctx, g=this.cricketGain;
     const chirp=()=>{ if(!g) return;
@@ -188,7 +240,7 @@ const AudioSys = {
 
 /* ============================ input ============================ */
 const Input = {
-  held:new Set(), look:{dx:0,dy:0}, interact:false, flash:false, locked:false,
+  held:new Set(), look:{dx:0,dy:0}, interact:false, flash:false, locked:false, pointerInteract:false,
   stick:{active:false,id:-1,ox:0,oy:0,x:0,y:0},
   lookTouch:{active:false,id:-1,lx:0,ly:0},
   init(canvas){
@@ -201,7 +253,9 @@ const Input = {
       this.held.add(c);});
     addEventListener("keyup",e=>{const c=BIND[e.code];if(c)this.held.delete(c);});
     // pointer lock mouse look — relock on any canvas click while playing/starting
-    canvas.addEventListener("mousedown",()=>{ if(!this.locked && (Game.state==="play"||Game.state==="starting")) canvas.requestPointerLock?.(); });
+    canvas.addEventListener("mousedown",()=>{ if(!this.locked && (Game.state==="play"||Game.state==="starting")) canvas.requestPointerLock?.();
+      else if(Game.state==="play") this.pointerInteract=true; });
+    addEventListener("mouseup",()=>{ this.pointerInteract=false; });
     document.addEventListener("pointerlockchange",()=>{ this.locked = document.pointerLockElement===canvas; });
     document.addEventListener("pointerlockerror",()=>{ this.locked=false; });
     addEventListener("mousemove",e=>{ if(this.locked){ this.look.dx+=e.movementX; this.look.dy+=e.movementY; }});
@@ -235,7 +289,9 @@ const Input = {
       addEventListener("touchmove",onTM,{passive:false});
       addEventListener("touchend",onTE,{passive:false});
       addEventListener("touchcancel",onTE,{passive:false});
-      $("btnE").addEventListener("touchstart",e=>{this.interact=true;e.stopPropagation();e.preventDefault();},{passive:false});
+      $("btnE").addEventListener("touchstart",e=>{this.interact=true;this.held.add("interact");e.stopPropagation();e.preventDefault();},{passive:false});
+      $("btnE").addEventListener("touchend",e=>{this.held.delete("interact");e.stopPropagation();e.preventDefault();},{passive:false});
+      $("btnE").addEventListener("touchcancel",e=>{this.held.delete("interact");e.stopPropagation();e.preventDefault();},{passive:false});
       $("btnF").addEventListener("touchstart",e=>{this.flash=true;e.stopPropagation();e.preventDefault();},{passive:false});
     }
   },
@@ -250,6 +306,7 @@ const Input = {
     }
     return {mx,mz,lx,ly,A,B};
   },
+  isInteractHeld(extra=false){ return this.held.has("interact") || this.pointerInteract || extra; },
   consumeInteract(){const v=this.interact;this.interact=false;return v;},
   consumeFlash(){const v=this.flash;this.flash=false;return v;}
 };
@@ -369,6 +426,113 @@ function buildTextures(){
     const t=new THREE.CanvasTexture(cv);t.magFilter=THREE.NearestFilter;t.colorSpace=THREE.SRGBColorSpace;
     return t;
   };
+  const rounded=(c,x,y,w,h,r)=>{
+    c.beginPath();
+    c.moveTo(x+r,y); c.lineTo(x+w-r,y); c.quadraticCurveTo(x+w,y,x+w,y+r);
+    c.lineTo(x+w,y+h-r); c.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+    c.lineTo(x+r,y+h); c.quadraticCurveTo(x,y+h,x,y+h-r);
+    c.lineTo(x,y+r); c.quadraticCurveTo(x,y,x+r,y); c.closePath();
+  };
+  const woodNoise=(c,x,y,w,h,a=0.18)=>{
+    for(let i=0;i<180;i++){
+      const yy=y+rng()*h, xx=x+rng()*w;
+      c.strokeStyle=`rgba(245,230,202,${R(0.035,a)})`;
+      c.lineWidth=R(0.5,1.8);
+      c.beginPath(); c.moveTo(xx,yy); c.lineTo(xx+R(20,90),yy+R(-5,5)); c.stroke();
+    }
+  };
+  TEX.parkMainSign = (closed=true)=>{
+    const w=512,h=300,cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");
+    c.clearRect(0,0,w,h);
+    rounded(c,18,18,w-36,h-36,28); c.fillStyle="#36271b"; c.fill();
+    rounded(c,28,28,w-56,h-56,20); c.fillStyle="#efe1bf"; c.fill();
+    c.save(); rounded(c,28,h*0.56,w-56,h*0.32,8); c.clip();
+    c.fillStyle="#68442d"; c.fillRect(28,h*0.56,w-56,h*0.32); woodNoise(c,28,h*0.56,w-56,h*0.32,0.20); c.restore();
+    c.strokeStyle="#2c2118"; c.lineWidth=9; rounded(c,24,24,w-48,h-48,24); c.stroke();
+    c.strokeStyle="#7a573b"; c.lineWidth=4; rounded(c,34,34,w-68,h-68,17); c.stroke();
+
+    // simplified raised park badge, echoing the reference photo without using a raster.
+    c.save(); c.translate(358,64);
+    c.fillStyle="#efe1bf"; c.strokeStyle="#2b2117"; c.lineWidth=8;
+    c.beginPath(); c.moveTo(54,0); c.bezierCurveTo(88,8,104,36,91,68); c.lineTo(76,118);
+    c.lineTo(28,136); c.lineTo(-14,106); c.lineTo(-25,52); c.bezierCurveTo(-34,20,-6,0,25,8); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle="#0f5a44"; c.beginPath(); c.moveTo(20,88); c.lineTo(42,58); c.lineTo(56,88); c.lineTo(86,100); c.lineTo(78,122); c.lineTo(26,128); c.lineTo(-8,104); c.closePath(); c.fill();
+    c.fillStyle="#0b3f30"; for(let i=0;i<5;i++){ c.beginPath(); c.moveTo(16+i*9,38-i*4); c.lineTo(-2+i*7,82); c.lineTo(33+i*8,82); c.closePath(); c.fill(); }
+    c.fillStyle="#ffffff"; c.beginPath(); c.moveTo(40,70); c.lineTo(60,48); c.lineTo(84,76); c.lineTo(66,72); c.lineTo(55,79); c.closePath(); c.fill();
+    c.fillStyle="#2c2118"; c.font="bold 23px Courier New"; c.textAlign="center"; c.fillText("NATIONAL",52,38); c.fillText("PARK",52,64);
+    c.restore();
+
+    c.textAlign="left";
+    c.fillStyle="#2b2117"; c.font="italic 52px Georgia"; c.shadowColor="rgba(72,42,20,.65)"; c.shadowBlur=0; c.shadowOffsetX=3; c.shadowOffsetY=3;
+    c.fillText("Lost Pines",54,100);
+    c.shadowColor="transparent"; c.font="bold 24px Courier New"; c.fillText("NATIONAL PARK",60,136);
+    c.fillStyle="#efe1bf"; c.font="italic 40px Georgia"; c.fillText("Trail 6",92,232);
+    c.font="bold 18px Courier New"; c.fillText("ENTRANCE",196,258);
+
+    if(closed){
+      c.save(); c.translate(w/2,112); c.rotate(-0.12);
+      c.fillStyle="rgba(170,42,31,.92)"; c.fillRect(-175,-24,350,48);
+      c.strokeStyle="rgba(235,213,176,.7)"; c.lineWidth=3; c.strokeRect(-168,-17,336,34);
+      c.fillStyle="#f1dfb8"; c.font="bold 42px Courier New"; c.textAlign="center"; c.fillText("CLOSED",0,15);
+      c.restore();
+    }
+    const t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
+  };
+  TEX.parkClosureSign = ()=>{
+    const w=384,h=260,cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");
+    c.clearRect(0,0,w,h);
+    rounded(c,16,16,w-32,h-32,22); c.fillStyle="#33261c"; c.fill();
+    rounded(c,26,26,w-52,h-52,16); c.fillStyle="#efe1bf"; c.fill();
+    c.fillStyle="#5d3d29"; c.fillRect(26,160,w-52,48); woodNoise(c,26,160,w-52,48,0.16);
+    c.strokeStyle="#2b2117"; c.lineWidth=7; rounded(c,21,21,w-42,h-42,20); c.stroke();
+    c.fillStyle="#2b2117"; c.textAlign="center"; c.font="bold 20px Courier New"; c.fillText("LOST PINES",w/2,62);
+    c.fillText("NATIONAL PARK",w/2,88);
+    c.font="bold 32px Courier New"; c.fillStyle="#80261e"; c.fillText("TRAIL 6",w/2,128);
+    c.font="bold 23px Courier New"; c.fillText("CLOSED",w/2,156);
+    c.fillStyle="#efe1bf"; c.font="bold 17px Courier New"; c.fillText("STORM DAMAGE",w/2,190);
+    c.fillStyle="#2b2117"; c.font="bold 15px Courier New"; c.fillText("AUTHORIZED CREW ONLY",w/2,228);
+    const t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
+  };
+  TEX.markerBlaze = (color="#6a6655",fresh=false)=>{
+    const w=96,h=132,cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");
+    c.clearRect(0,0,w,h);
+    c.fillStyle=color;
+    c.beginPath();
+    c.moveTo(28,14); c.lineTo(70,10); c.lineTo(76,42); c.lineTo(68,118);
+    c.lineTo(30,122); c.lineTo(20,82); c.lineTo(26,50); c.closePath();
+    c.fill();
+    c.globalCompositeOperation="destination-out";
+    for(let i=0;i<(fresh?9:18);i++){
+      c.fillStyle=`rgba(0,0,0,${R(0.35,0.95)})`;
+      c.beginPath();
+      const x=R(24,72),y=R(18,118),rw=R(4,15),rh=R(3,18);
+      c.ellipse(x,y,rw,rh,R(0,Math.PI),0,Math.PI*2); c.fill();
+    }
+    c.globalCompositeOperation="source-over";
+    c.strokeStyle=fresh?"rgba(230,224,197,.25)":"rgba(30,24,18,.38)";
+    c.lineWidth=3;
+    for(let i=0;i<7;i++){
+      c.beginPath();
+      const y=R(22,112); c.moveTo(R(24,38),y); c.lineTo(R(54,76),y+R(-10,10)); c.stroke();
+    }
+    const t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
+  };
+  TEX.weatherNotice = ()=>{
+    const w=256,h=192,cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");
+    c.fillStyle="#49331f"; c.fillRect(0,0,w,h);
+    c.fillStyle="#b7a47d"; c.fillRect(18,16,w-36,h-32);
+    for(let i=0;i<70;i++){
+      c.fillStyle=`rgba(49,31,17,${R(0.04,0.16)})`;
+      c.fillRect(R(20,w-28),R(18,h-26),R(2,18),R(1,5));
+    }
+    c.strokeStyle="#25170f"; c.lineWidth=8; c.strokeRect(8,8,w-16,h-16);
+    c.strokeStyle="#7a6040"; c.lineWidth=3; c.strokeRect(18,16,w-36,h-32);
+    c.fillStyle="#6c211b"; c.font="bold 19px Courier New"; c.textAlign="center";
+    c.fillText("TRAIL CLOSED",w/2,56);
+    c.font="bold 22px Courier New"; c.fillText("DO NOT",w/2,96); c.fillText("RESTORE",w/2,124);
+    c.fillStyle="#2b2118"; c.font="9px Courier New"; c.fillText("DISTRICT OFFICE - WEATHER DAMAGED",w/2,158);
+    const t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
+  };
   TEX.wallMap = (()=>{
     const cv=document.createElement("canvas");cv.width=256;cv.height=192;const c=cv.getContext("2d");
     c.fillStyle="#b7ac8d";c.fillRect(0,0,256,192);
@@ -412,6 +576,7 @@ const colBoxes=[];   // {minx,maxx,minz,maxz}
 const interactables=[]; // {x,z,y,r,type,prompt,active,use,node}
 let trailheadSign, scenicSign, shedLight, shedGlow, figure;
 const whiteMarkers=[], redMarkers=[], branches=[];
+let shedTreeScreen=null;
 
 function initRenderer(){
   const canvas=$("c");
@@ -499,16 +664,16 @@ function buildMaterials(){
   const flNrm=loadN("./assets/textures/ground_floor_n.png",[90,90]);
   MATS.floor=new THREE.MeshStandardMaterial({map:flMap,normalMap:flNrm,
     normalScale:new THREE.Vector2(1.2,1.2),roughness:0.97,metalness:0.0,color:0xa8a8a8});
-  // packed trail dirt — tiling density matched to the floor so it doesn't smear
-  const dMap=load("./assets/textures/ground_dirt.png",[1,1]);
-  const dNrm=loadN("./assets/textures/ground_dirt_n.png",[1,1]);
-  MATS.dirt=new THREE.MeshStandardMaterial({map:dMap,normalMap:dNrm,
-    normalScale:new THREE.Vector2(1.2,1.2),roughness:0.97,metalness:0.0,color:0xa8a8a8});
-  // gravel parking lot — same PBR system + normal map so it matches the rest
-  const gMap=load("./assets/textures/ground_gravel.png",[10,7]);
-  const gNrm=loadN("./assets/textures/ground_gravel_n.png",[10,7]);
-  MATS.gravel=new THREE.MeshStandardMaterial({map:gMap,normalMap:gNrm,
-    normalScale:new THREE.Vector2(1.2,1.2),roughness:0.97,metalness:0.0,color:0xa8a8a8});
+  // Keep ground surfaces in one seamless forest-floor family; color shifts mark
+  // compressed trail/lot wear without switching to unrelated textures.
+  const pathMap=load("./assets/textures/ground_floor.png",[1,1]);
+  const pathNrm=loadN("./assets/textures/ground_floor_n.png",[1,1]);
+  MATS.dirt=new THREE.MeshStandardMaterial({map:pathMap,normalMap:pathNrm,
+    normalScale:new THREE.Vector2(1.0,1.0),roughness:0.98,metalness:0.0,color:0x8d917b});
+  const lotMap=load("./assets/textures/ground_floor.png",[12,8]);
+  const lotNrm=loadN("./assets/textures/ground_floor_n.png",[12,8]);
+  MATS.gravel=new THREE.MeshStandardMaterial({map:lotMap,normalMap:lotNrm,
+    normalScale:new THREE.Vector2(1.35,1.35),roughness:0.99,metalness:0.0,color:0x7b806d});
   MATS.bark=new THREE.MeshLambertMaterial({map:TEX.bark});
   MATS.canopy=new THREE.MeshLambertMaterial({color:0x27392a,flatShading:true});
   MATS.canopy2=new THREE.MeshLambertMaterial({color:0x1f3024,flatShading:true});
@@ -518,13 +683,17 @@ function buildMaterials(){
   MATS.wood=new THREE.MeshLambertMaterial({color:0x6e5a42,flatShading:true});
   MATS.woodDark=new THREE.MeshLambertMaterial({color:0x4a3c2c,flatShading:true});
   MATS.rock=new THREE.MeshLambertMaterial({color:0x596066,flatShading:true});
-  MATS.markerFaded=new THREE.MeshBasicMaterial({color:0x8d8d7c});
-  MATS.markerWhite=new THREE.MeshBasicMaterial({color:0xeeeede});
-  MATS.markerRed=new THREE.MeshBasicMaterial({color:0xc01f14});
+  MATS.markerFaded=new THREE.MeshBasicMaterial({map:TEX.markerBlaze("#4f4b3d",false),transparent:true,alphaTest:0.18});
+  MATS.markerWhite=new THREE.MeshBasicMaterial({map:TEX.markerBlaze("#aaa68d",true),transparent:true,alphaTest:0.18});
+  MATS.markerRed=new THREE.MeshBasicMaterial({map:TEX.markerBlaze("#7f1e17",false),transparent:true,alphaTest:0.18});
   MATS.dark=new THREE.MeshBasicMaterial({color:0x07090a});
   MATS.paper=new THREE.MeshLambertMaterial({color:0xcfc6ae});
   MATS.can=new THREE.MeshLambertMaterial({color:0x8a3026,flatShading:true});
   MATS.water=new THREE.MeshLambertMaterial({color:0x10181c});
+  MATS.leafA=new THREE.MeshLambertMaterial({color:0x3c2b18,side:THREE.DoubleSide});
+  MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
+  MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
+  MATS.stain=new THREE.MeshBasicMaterial({color:0x151411,transparent:true,opacity:0.34,side:THREE.DoubleSide});
 }
 function box(w,h,d,mat,x,y,z,ry=0,collide=false,invisible=false){
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
@@ -621,6 +790,15 @@ function placeBuilding(name,x,z,ry,targetW){
   scene.add(g);
   return g;
 }
+function makeTreeInstance(glb,x,z,h=7,rot=0){
+  const mesh=new THREE.Mesh(glb.geometry,glb.material);
+  const k=h/(glb.unitH||1);
+  mesh.scale.setScalar(k);
+  mesh.rotation.y=rot;
+  mesh.position.set(x,0,z);
+  scene.add(mesh);
+  return mesh;
+}
 
 // ---- bush / undergrowth meshes (GLB), instanced scatter ----
 let BUSH_GLBS=[];
@@ -647,24 +825,125 @@ async function loadBushMesh(){
 
 // ---- fallen log mesh (GLB), used for the blocking branches on the path ----
 let LOG_GLB=null;
+const LOG_GLB_URLS=[
+  "./assets/models/fallen_log.glb",
+  "https://d3u0tzju9qaucj.cloudfront.net/7d051b5a-7bfe-49fe-a484-24e7b3a9458a/802cc8bb-b552-4545-85c0-3c533ab33419.glb"
+];
 async function loadLogMesh(){
-  try{
-    const gltf=await new Promise((res,rej)=>new GLTFLoader().load("./assets/models/fallen_log.glb",res,undefined,rej));
-    let geo=null,mat=null;
-    gltf.scene.updateWorldMatrix(true,true);
-    gltf.scene.traverse(o=>{ if(o.isMesh && !geo){ geo=o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); mat=o.material; }});
-    if(!geo) return;
-    geo.computeBoundingBox();
-    const bb=geo.boundingBox;
-    // center the geometry on its own bbox so it rotates about its long axis cleanly
-    const cx=(bb.max.x+bb.min.x)/2, cy=(bb.max.y+bb.min.y)/2, cz=(bb.max.z+bb.min.z)/2;
-    geo.translate(-cx,-cy,-cz);
-    const dims={x:bb.max.x-bb.min.x, y:bb.max.y-bb.min.y, z:bb.max.z-bb.min.z};
-    // longest axis = the log's length
-    const longest=Math.max(dims.x,dims.y,dims.z);
-    if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.FrontSide; }
-    LOG_GLB={geometry:geo, material:mat, longest, dims};
-  }catch(e){ console.warn("log mesh load failed",e); LOG_GLB=null; }
+  for(const url of LOG_GLB_URLS){
+    try{
+      const response=await fetch(url,{cache:"no-store"});
+      if(!response.ok) continue;
+      const objectUrl=URL.createObjectURL(await response.blob());
+      const gltf=await new Promise((resolve,reject)=>{
+        new GLTFLoader().load(objectUrl,resolve,undefined,reject);
+      }).finally(()=>URL.revokeObjectURL(objectUrl));
+      let geo=null,mat=null;
+      gltf.scene.updateWorldMatrix(true,true);
+      gltf.scene.traverse(o=>{ if(o.isMesh && !geo){ geo=o.geometry.clone(); geo.applyMatrix4(o.matrixWorld); mat=o.material; }});
+      if(!geo) continue;
+      geo.computeBoundingBox();
+      const bb=geo.boundingBox;
+      // center the geometry on its own bbox so it rotates about its long axis cleanly
+      const cx=(bb.max.x+bb.min.x)/2, cy=(bb.max.y+bb.min.y)/2, cz=(bb.max.z+bb.min.z)/2;
+      geo.translate(-cx,-cy,-cz);
+      const dims={x:bb.max.x-bb.min.x, y:bb.max.y-bb.min.y, z:bb.max.z-bb.min.z};
+      // longest axis = the log's length
+      const longest=Math.max(dims.x,dims.y,dims.z);
+      if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.FrontSide; }
+      LOG_GLB={geometry:geo, material:mat, longest, dims};
+      return;
+    }catch(e){ if(url!==LOG_GLB_URLS[0]) console.warn("optional log mesh load failed",url,e); }
+  }
+  LOG_GLB=null;
+}
+function makeFallenLog(length=4.4, radius=0.36, seed=0){
+  const group=new THREE.Group();
+  const barkMat=new THREE.MeshStandardMaterial({color:0x3a3025,roughness:0.96,metalness:0.0,flatShading:true});
+  const innerMat=new THREE.MeshStandardMaterial({color:0x9b7b55,roughness:0.9,metalness:0.0,flatShading:true});
+  const darkMat=new THREE.MeshStandardMaterial({color:0x1f1a15,roughness:1.0,metalness:0.0,flatShading:true});
+  const ends=18, sides=18;
+  const pos=[], norm=[], idx=[];
+  for(let i=0;i<=ends;i++){
+    const u=i/ends, x=lerp(-length/2,length/2,u);
+    const taper=1.0-0.15*u+0.035*Math.sin(u*11+seed);
+    for(let j=0;j<sides;j++){
+      const a=j/sides*Math.PI*2;
+      const ridge=1+0.085*Math.sin(a*9+u*23+seed)+0.045*Math.sin(a*15-u*17);
+      const r=radius*taper*ridge;
+      pos.push(x, Math.cos(a)*r, Math.sin(a)*r);
+      norm.push(0, Math.cos(a), Math.sin(a));
+    }
+  }
+  for(let i=0;i<ends;i++) for(let j=0;j<sides;j++){
+    const a=i*sides+j, b=i*sides+(j+1)%sides, c=(i+1)*sides+j, d=(i+1)*sides+(j+1)%sides;
+    idx.push(a,c,b,b,c,d);
+  }
+  const trunkGeo=new THREE.BufferGeometry();
+  trunkGeo.setAttribute("position",new THREE.Float32BufferAttribute(pos,3));
+  trunkGeo.setAttribute("normal",new THREE.Float32BufferAttribute(norm,3));
+  trunkGeo.setIndex(idx); trunkGeo.computeVertexNormals();
+  const trunk=new THREE.Mesh(trunkGeo,barkMat);
+  trunk.rotation.z=Math.PI/2;
+  group.add(trunk);
+
+  const capGeo=new THREE.CylinderGeometry(radius*0.92,radius*0.82,0.12,14);
+  for(const side of [-1,1]){
+    const cap=new THREE.Mesh(capGeo,innerMat);
+    cap.rotation.z=Math.PI/2;
+    cap.position.x=side*length/2;
+    group.add(cap);
+    for(let i=0;i<7;i++){
+      const splinter=new THREE.Mesh(new THREE.ConeGeometry(R(0.018,0.04),R(0.35,0.74),5), i%3===0?innerMat:barkMat);
+      const a=R(0,Math.PI*2), rr=R(radius*0.16,radius*0.74);
+      splinter.position.set(side*(length/2+R(0.08,0.22)), Math.cos(a)*rr, Math.sin(a)*rr);
+      splinter.rotation.set(R(-0.5,0.5), side*Math.PI/2+R(-0.55,0.55), R(-0.7,0.7));
+      group.add(splinter);
+    }
+  }
+  for(let i=0;i<8;i++){
+    const a=R(0,Math.PI*2), sx=R(-length*0.36,length*0.38), branchLen=R(0.42,0.92);
+    const twig=new THREE.Mesh(new THREE.CylinderGeometry(R(0.035,0.055),R(0.065,0.1),branchLen,7),barkMat);
+    twig.position.set(sx,Math.cos(a)*radius*0.82,Math.sin(a)*radius*0.82);
+    twig.rotation.set(R(-0.9,0.9),R(0,Math.PI*2),Math.PI/2+R(-0.8,0.8));
+    group.add(twig);
+  }
+  for(let i=0;i<26;i++){
+    const a=R(0,Math.PI*2), sx=R(-length*0.46,length*0.46);
+    const strip=new THREE.Mesh(new THREE.BoxGeometry(R(0.04,0.08),R(0.012,0.022),R(0.48,1.1)),darkMat);
+    strip.position.set(sx,Math.cos(a)*radius*1.02,Math.sin(a)*radius*1.02);
+    strip.rotation.set(R(-0.15,0.15),a,R(-0.18,0.18));
+    group.add(strip);
+  }
+  return group;
+}
+function scatterLogDebris(x,z,rollDir,rad){
+  const chips=[];
+  for(let i=0;i<14;i++){
+    const mat=(i%3===0?MATS.wood:MATS.woodDark).clone();
+    mat.transparent=true; mat.opacity=0.95;
+    const chip=new THREE.Mesh(new THREE.BoxGeometry(R(0.04,0.13),R(0.012,0.035),R(0.16,0.42)),mat);
+    chip.position.set(x+R(-1.7,1.7),rad+R(0.02,0.2),z+R(-0.22,0.22));
+    chip.rotation.set(R(0,Math.PI),R(0,Math.PI),R(0,Math.PI));
+    scene.add(chip);
+    chips.push({
+      mesh:chip, x:chip.position.x, y:chip.position.y, z:chip.position.z,
+      vx:rollDir*R(0.25,1.45), vy:R(0.45,1.2), vz:R(-0.5,0.5),
+      rx:R(-4,4), ry:R(-5,5), rz:R(-4,4)
+    });
+  }
+  Anim.push({t:0,dur:2.2,fn(k){
+    const t=k*2.2;
+    for(const c of chips){
+      c.mesh.position.x=c.x+c.vx*t;
+      c.mesh.position.z=c.z+c.vz*t;
+      c.mesh.position.y=Math.max(0.025,c.y+c.vy*t-0.95*t*t);
+      c.mesh.rotation.x+=c.rx*0.016;
+      c.mesh.rotation.y+=c.ry*0.016;
+      c.mesh.rotation.z+=c.rz*0.016;
+      c.mesh.material.opacity=lerp(0.95,0.42,k);
+    }
+  }});
 }
 
 // Scatter bushes with an INVERTED density gradient: sparse but encroaching near
@@ -966,7 +1245,7 @@ function buildShed(){
   shedGlow.visible=false;
   shedLight=new THREE.PointLight(0xd8b36a,0,9); shedLight.position.set(x,1.8,z); scene.add(shedLight);
   // hidden posted notice on the inside back wall
-  const sgn=plane(0.8,0.6,new THREE.MeshLambertMaterial({map:TEX.sign("TRAIL CLOSED\nDO NOT\nRESTORE",{w:160,h:120,size:16,top:34,lh:26,bg:"#b7ac8d",fg:"#7a2620"})}),
+  const sgn=plane(0.9,0.68,new THREE.MeshLambertMaterial({map:TEX.weatherNotice()}),
     x+W/2-0.08,1.5,z, -Math.PI/2);
   addInteract({x:x+W/2-0.4,z,y:1.5,r:2.0,type:"read",prompt:STR.pRead,text:STR.noteShed,
     use(){ Game.tasks.shedSign=true; Events.fire("shedSign"); }});
@@ -1031,14 +1310,83 @@ function buildOutpost(){
 }
 function buildBridge(){
   const z=-120, x=pathX(z);
-  for(let i=0;i<8;i++) box(2.6,0.07,0.55,MATS.planks,x,0.18,z-2.2+i*0.62);
-  box(0.1,0.85,5.2,MATS.woodDark,x-1.25,0.6,z,0,false);
-  box(0.1,0.85,5.2,MATS.woodDark,x+1.25,0.6,z,0,false);
-  box(0.08,0.06,5.2,MATS.wood,x-1.25,1.02,z); box(0.08,0.06,5.2,MATS.wood,x+1.25,1.02,z);
+  const nailMat=new THREE.MeshBasicMaterial({color:0x18130f});
+  // uneven deck boards
+  for(let i=0;i<11;i++){
+    const zz=z-2.55+i*0.51;
+    const plank=box(R(2.55,2.95),R(0.07,0.11),R(0.38,0.52),i%3?MATS.planks:MATS.planksDark,
+      x+R(-0.05,0.05),0.20+R(-0.015,0.018),zz,R(-0.045,0.045),false);
+    plank.rotation.x=R(-0.025,0.025);
+    for(const sx of [-0.95,0.95]){
+      const n=new THREE.Mesh(new THREE.CylinderGeometry(0.018,0.018,0.012,6),nailMat);
+      n.rotation.x=Math.PI/2; n.position.set(x+sx+R(-0.04,0.04),0.265,zz+R(-0.12,0.12)); scene.add(n);
+    }
+  }
+  // darker stringers under the boards
+  box(0.18,0.18,5.8,MATS.woodDark,x-0.85,0.08,z,0,false);
+  box(0.18,0.18,5.8,MATS.woodDark,x+0.85,0.08,z,0,false);
+  // irregular side posts and rails
+  for(const side of [-1,1]){
+    for(let i=0;i<4;i++){
+      const zz=z-2.45+i*1.65;
+      const p=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.1,R(0.82,1.15),7),MATS.woodDark);
+      p.position.set(x+side*1.28,R(0.53,0.64),zz);
+      p.rotation.z=side*R(0.02,0.12); scene.add(p);
+    }
+    for(const y of [0.72,1.02]){
+      const rail=new THREE.Mesh(new THREE.CylinderGeometry(0.045,0.07,5.45,8),y>0.9?MATS.wood:MATS.woodDark);
+      rail.rotation.x=Math.PI/2;
+      rail.rotation.z=side*R(0.01,0.035);
+      rail.position.set(x+side*1.28,y,z);
+      scene.add(rail);
+    }
+    // sagging inner rope/brace line
+    const curve=new THREE.CatmullRomCurve3([
+      new THREE.Vector3(x+side*1.18,0.78,z-2.5),
+      new THREE.Vector3(x+side*1.18,0.66,z),
+      new THREE.Vector3(x+side*1.18,0.78,z+2.5)
+    ]);
+    const rope=new THREE.Mesh(new THREE.TubeGeometry(curve,18,0.025,6,false),MATS.woodDark);
+    scene.add(rope);
+  }
+  // mossy stones at the creek banks
+  for(let i=0;i<12;i++){
+    const side=i%2?-1:1;
+    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(R(0.14,0.34),0),MATS.rock);
+    rock.scale.set(R(1,1.8),R(0.45,0.9),R(0.8,1.3));
+    rock.position.set(x+side*R(1.45,2.35),R(0.03,0.12),z+R(-2.8,2.8));
+    scene.add(rock);
+  }
   addBoxCol(x-1.3,z,0.3,5.4); addBoxCol(x+1.3,z,0.3,5.4);
   // creek banks funnel the player onto the bridge
   addBoxCol(x-9,z,15,3.8); addBoxCol(x+9.5,z,16,3.8);
   return {x,z};
+}
+function revealShedTreeScreen(){
+  if(shedTreeScreen || !TREE_GLBS.length) return;
+  shedTreeScreen=new THREE.Group();
+  scene.add(shedTreeScreen);
+  const z0=-98;
+  const px=pathX(z0);
+  const spots=[
+    [px+9.5,z0-4.5,7.8],[px+12.2,z0-2.4,8.8],[px+14.4,z0+0.4,7.4],
+    [px+10.8,z0+2.4,9.2],[px+15.6,z0+4.7,8.1],[px+18.0,z0+1.8,7.6]
+  ];
+  spots.forEach((s,i)=>{
+    const glb=TREE_GLBS[i%TREE_GLBS.length];
+    const tree=makeTreeInstance(glb,s[0],s[1],s[2],R(0,6.28));
+    shedTreeScreen.add(tree);
+    addCircle(s[0],s[1],1.05);
+  });
+  if(BUSH_GLBS.length){
+    for(let i=0;i<18;i++){
+      const glb=BUSH_GLBS[i%BUSH_GLBS.length];
+      const bush=makeTreeInstance(glb,px+R(8.4,18.8),z0+R(-5.6,5.4),R(0.65,1.15),R(0,6.28));
+      shedTreeScreen.add(bush);
+    }
+  }
+  addBoxCol(px+13.6,z0,9.4,8.8,0);
+  UI.glitch();
 }
 function buildCabin(){ // distant boarded cabin — set dressing
   const z=-141, x=pathX(z)+21;
@@ -1055,35 +1403,24 @@ function buildCabin(){ // distant boarded cabin — set dressing
   }
 }
 function buildTrailhead(){
-  const x=1.6,z=8.5;
-  // two posts
-  box(0.12,1.6,0.12,MATS.woodDark,x-0.78,0.8,z,0,true);
-  box(0.12,1.6,0.12,MATS.woodDark,x+0.78,0.8,z,0,true);
-  // a solid backing board across the posts, and the readable text mounted just in
-  // FRONT of it (toward the player at -z) so it never clips behind the posts.
-  box(1.78,0.98,0.08,MATS.planksDark,x,1.35,z+0.02,0,true);   // backing board
-  trailheadSign=plane(1.6,0.86,new THREE.MeshLambertMaterial({map:TEX.sign(STR.signTrailhead,{w:300,h:170,size:13,top:40,lh:26})}),x,1.35,z-0.045,0);
-  // a small angled top cap so it reads as a real trailhead board
-  const cap=box(1.9,0.1,0.34,MATS.metal,x,1.9,z); cap.rotation.x=-0.22;
-  addInteract({x,z,y:1.3,r:2.4,type:"read",prompt:STR.pRead,
+  const x=pathX(8.5),z=8.5;
+  const buildSign=(sx,sz,ry,w,h,map,wide=false)=>{
+    const postGap=w*(wide?0.36:0.38);
+    const lift=1.25;
+    box(0.12,1.85,0.12,MATS.woodDark,sx-postGap,0.92,sz,ry,true);
+    box(0.12,1.85,0.12,MATS.woodDark,sx+postGap,0.92,sz,ry,true);
+    box(w+0.18,h+0.16,0.09,MATS.planksDark,sx,lift,sz+0.04,ry,true,false);
+    const face=plane(w,h,new THREE.MeshLambertMaterial({map,transparent:true,alphaTest:0.04}),sx,lift,sz-0.035,ry);
+    const cap=box(w+0.25,0.08,0.18,MATS.woodDark,sx,lift+h*0.53,sz+0.01,ry,false);
+    cap.rotation.x=-0.16;
+    return face;
+  };
+  // Two carved park signs flank the entrance rather than sitting awkwardly in the path.
+  trailheadSign=buildSign(x-2.25,z+0.15,0.16,2.35,1.38,TEX.parkMainSign(true),true);
+  const closureSign=buildSign(x+2.2,z+0.05,-0.16,1.62,1.1,TEX.parkClosureSign(),false);
+  addInteract({x:x-2.25,z:z+0.15,y:1.3,r:2.4,type:"read",prompt:STR.pRead,
     get text(){ return Game.signChanged?STR.signTrailheadChanged:STR.signTrailhead; },use(){}});
-  // high-fidelity carved signpost mesh standing beside the board as the hero marker
-  const sp=BUILDING_GLB.signpost;
-  if(sp){
-    const g=sp.root.clone(true);
-    const k=2.6/(sp.dims.h||1);
-    g.scale.setScalar(k);
-    g.rotation.y=-0.35;
-    g.updateWorldMatrix(true,true);
-    const bb=new THREE.Box3().setFromObject(g);
-    g.position.set(x-2.6, -bb.min.y, z+0.4);
-    scene.add(g);
-    addBoxCol(x-2.6,z+0.4,0.7,0.7,0);
-  }
-  // fire ring + log
-  const ring=new THREE.Mesh(new THREE.TorusGeometry(0.5,0.12,5,8),MATS.rock);
-  ring.rotation.x=Math.PI/2; ring.position.set(-3,0.1,7); scene.add(ring);
-  box(1.6,0.3,0.3,MATS.woodDark,-3.2,0.16,5.4,0.4,true);
+  addInteract({x:x+2.2,z:z+0.05,y:1.25,r:2.2,type:"read",prompt:STR.pRead,text:STR.signTrailhead,use(){}});
   // scenic loop sign for the bad ending — hidden until dawn
   scenicSign=new THREE.Group();
   const p=new THREE.Mesh(new THREE.BoxGeometry(0.1,1.4,0.1),MATS.woodDark);p.position.y=0.7;scenicSign.add(p);
@@ -1102,20 +1439,63 @@ function buildParkingLot(){
   // gravel pad
   const lot=new THREE.Mesh(new THREE.PlaneGeometry(30,18),MATS.gravel);
   lot.rotation.x=-Math.PI/2; lot.position.set(1.6,0.0,cz); scene.add(lot);
-  // wheel stops (low concrete blocks) in a row at the back of the lot
+  const stripeMat=new THREE.MeshBasicMaterial({color:0x8b826c,transparent:true,opacity:0.24,side:THREE.DoubleSide});
   for(let i=-2;i<=2;i++){
-    box(1.4,0.18,0.3,MATS.rock,1.6+i*3.2,0.09,20.5,0,false);
+    const sx=1.6+i*3.2;
+    const stripe=plane(0.08,5.4,stripeMat.clone(),sx+1.15,0.012,15.4,0,-Math.PI/2);
+    stripe.material.opacity=R(0.12,0.28);
+    const stop=box(1.45,0.18,0.32,MATS.rock,sx+R(-0.08,0.08),0.09,20.45+R(-0.08,0.08),R(-0.08,0.08),false);
+    stop.scale.y=R(0.75,1.08);
+    for(let j=0;j<3;j++){
+      const chip=new THREE.Mesh(new THREE.DodecahedronGeometry(R(0.04,0.09),0),MATS.rock);
+      chip.position.set(sx+R(-0.65,0.65),0.13,20.45+R(-0.17,0.17)); scene.add(chip);
+    }
   }
-  // a low log barrier on the lot's outer edges (rustic trailhead boundary)
-  box(0.3,0.4,16,MATS.woodDark,-13.5,0.2,cz,0,true);   // west edge
-  box(0.3,0.4,16,MATS.woodDark,16.5,0.2,cz,0,true);    // east edge
-  // a battered trail-information board off to the side of the lot entrance —
-  // text mounted in FRONT of a solid backing board so it doesn't clip the poles
-  box(0.1,1.7,0.1,MATS.woodDark,-7.05,0.85,11.55,0,true);
-  box(0.1,1.7,0.1,MATS.woodDark,-4.95,0.85,11.55,0,true);
-  const bbk=box(2.18,1.12,0.08,MATS.planksDark,-6.0,1.45,11.5,-0.3,true);  // backing
-  const board=plane(2.0,1.0,new THREE.MeshLambertMaterial({map:TEX.sign(STR.signParking,{w:300,h:150,size:15,top:38,lh:28,bg:"#5b6354",fg:"#e8e2cf"})}),-6.0,1.45,11.42,-0.3);
-  addInteract({x:-6.0,z:11.5,y:1.4,r:2.4,type:"read",prompt:STR.pRead,text:STR.noteParking,use(){}});
+  // Rustic rail barriers with uneven posts, rather than plain rectangular edge blocks.
+  const rail=(x,z,len)=>{
+    for(let dz=-len/2;dz<=len/2;dz+=2.2){
+      const p=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.16,R(0.62,0.9),7),MATS.woodDark);
+      p.position.set(x,R(0.28,0.38),z+dz); p.rotation.z=R(-0.12,0.12); scene.add(p);
+    }
+    for(const y of [0.26,0.48]){
+      const r=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.14,len,9),MATS.woodDark);
+      r.rotation.x=Math.PI/2; r.rotation.z=R(-0.04,0.04); r.position.set(x,y,z); scene.add(r);
+    }
+    addBoxCol(x,z,0.55,len,0);
+  };
+  rail(-13.5,cz,16);
+  rail(16.5,cz,16);
+  // Dark damp patches and oil stains under the leaf layer.
+  for(let i=0;i<7;i++){
+    const stain=new THREE.Mesh(new THREE.CircleGeometry(R(0.45,1.4),18),MATS.stain.clone());
+    stain.rotation.x=-Math.PI/2; stain.scale.set(R(1.0,2.0),R(0.35,0.9),1);
+    stain.position.set(R(-8.5,11.5),0.018,R(8.6,20.2)); scene.add(stain);
+  }
+  // Overgrown tufts punching through the gravel.
+  const grassTex=new THREE.TextureLoader().load("./assets/textures/grass_tuft.png");
+  grassTex.colorSpace=THREE.SRGBColorSpace;
+  const grassMat=new THREE.MeshLambertMaterial({map:grassTex,transparent:true,alphaTest:0.35,side:THREE.DoubleSide,fog:true});
+  const q1=new THREE.PlaneGeometry(0.55,0.42); q1.translate(0,0.21,0);
+  const q2=q1.clone(); q2.rotateY(Math.PI/2);
+  const tuftGeo=mergeGeometries([q1,q2]);
+  const M=new THREE.Matrix4(),Q=new THREE.Quaternion(),S=new THREE.Vector3(),P=new THREE.Vector3();
+  const tufts=new THREE.InstancedMesh(tuftGeo,grassMat,260);
+  for(let i=0;i<260;i++){
+    const edge=rng()<0.55;
+    const x=edge?(rng()<0.5?R(-13.2,-9.5):R(12.8,16.0)):R(-8.8,11.4);
+    const z=edge?R(6.5,21.5):R(8.2,20.8);
+    P.set(x,0.018,z); Q.setFromEuler(new THREE.Euler(0,R(0,6.28),0));
+    const sc=R(0.55,1.25); S.set(sc,sc*R(0.8,1.45),sc); M.compose(P,Q,S); tufts.setMatrixAt(i,M);
+  }
+  tufts.instanceMatrix.needsUpdate=true; scene.add(tufts);
+  // Fallen leaves and bark flakes across the lot.
+  const leafGeo=new THREE.PlaneGeometry(0.16,0.06);
+  for(let i=0;i<170;i++){
+    const leaf=new THREE.Mesh(leafGeo,(i%2?MATS.leafA:MATS.leafB));
+    leaf.rotation.set(-Math.PI/2+R(-0.08,0.08),0,R(0,6.28));
+    leaf.scale.set(R(0.7,1.8),R(0.7,1.35),1);
+    leaf.position.set(R(-12.4,15.4),0.024,R(6.2,21.9)); scene.add(leaf);
+  }
 }
 
 // Pack extra trees and bushes into the four corners of the backdrop box and along
@@ -1199,46 +1579,76 @@ function buildBranches(){
       grp.rotation.y=R(-0.15,0.15);
       scene.add(grp);
     } else {
-      // procedural fallback log — thicker and bigger, centered on its axis so it
-      // rolls cleanly. Built from a main trunk + a couple of stub branches + an
-      // end cap to read as a storm-snapped log.
-      grp=new THREE.Group();
-      rad=0.34;
-      const main=new THREE.Mesh(new THREE.CylinderGeometry(rad,rad*0.92,4.2,9),MATS.woodDark);
-      main.rotation.z=Math.PI/2; grp.add(main);
-      // splintered lighter end caps
-      const cap=new THREE.Mesh(new THREE.ConeGeometry(rad*0.9,0.5,9),MATS.wood);
-      cap.rotation.z=-Math.PI/2; cap.position.x=2.1; grp.add(cap);
-      // a few stub branches
-      for(let i=0;i<3;i++){
-        const tw=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,R(0.5,0.9),5),MATS.woodDark);
-        tw.position.set(R(-1.6,1.6),R(-0.1,0.2),R(-0.15,0.15));
-        tw.rotation.set(R(-0.6,0.6),R(0,3),Math.PI/2+R(-0.6,0.6)); grp.add(tw);
-      }
+      // high-detail procedural fallen tree: irregular bark, snapped ends,
+      // branch nubs, and raised strips that catch the flashlight.
+      rad=0.36;
+      len=4.4;
+      grp=makeFallenLog(len,rad,idx*3.7);
       grp.position.set(x,rad,z);
       grp.rotation.y=R(-0.12,0.12);
       scene.add(grp);
     }
-    const col={x,z,r:1.2}; addCircle(x,z,1.2);
+    const col={x,z,r:1.2}; colCircles.push(col);
     const it=addInteract({x,z,y:0.5,r:2.4,type:"branch",prompt:STR.pBranch,node:grp,
       use(){
-        it.active=false; AudioSys.rustle(x,z);
+        const stage=it.stage||0;
+        if(stage<2){
+          AudioSys.rustle(it.x,it.z);
+          if(stage===1) AudioSys.snap(it.x-rollDir*0.5,it.z);
+          const D=rollDir*(0.42+stage*0.2);
+          const S=rollDir*(0.08+stage*0.04);
+          const base={x:grp.position.x,z:grp.position.z,y:grp.position.y,rz:grp.rotation.z,ry:grp.rotation.y,rx:grp.rotation.x};
+          it.stage=stage+1;
+          it.animating=true;
+          Anim.push({t:0,dur:0.72,fn(k){
+            const e=0.5-0.5*Math.cos(Math.PI*k);
+            grp.position.x=base.x+D*e;
+            grp.position.z=base.z+S*e+Math.sin(e*Math.PI*3)*(1-e)*0.025;
+            grp.position.y=base.y+Math.sin(e*Math.PI)*(0.035+stage*0.02);
+            grp.rotation.z=base.rz-(D/rad)*e;
+            grp.rotation.y=base.ry+rollDir*(0.06+stage*0.05)*e;
+            grp.rotation.x=base.rx+Math.sin(e*Math.PI*2)*(1-e)*0.04;
+          },end(){
+            grp.position.set(base.x+D,rad,base.z+S);
+            grp.rotation.z=base.rz-(D/rad);
+            grp.rotation.y=base.ry+rollDir*(0.06+stage*0.05);
+            it.x=grp.position.x; it.z=grp.position.z; col.x=it.x; col.z=it.z;
+            it.animating=false;
+          }});
+          return;
+        }
+        it.active=false; AudioSys.rustle(it.x,it.z);
+        AudioSys.snap(it.x-rollDir*0.8,it.z);
         const i=colCircles.indexOf(col); if(i>=0)colCircles.splice(i,1);
-        // realistic slow roll: rotate about the path-axis (Z) while translating in X.
-        // distance rolled D over a turn of D/rad radians, eased over a long beat.
-        const D=3.4*rollDir;                  // how far it rolls off the path
-        const baseRotZ=grp.rotation.z, baseX=grp.position.x;
-        const turns=D/rad;                    // radians to roll that distance
-        Anim.push({t:0,dur:2.6,fn(k){
-          // easeInOutSine for a heavy, settling feel
-          const e=0.5-0.5*Math.cos(Math.PI*k);
-          grp.position.x=baseX+D*e;
-          grp.rotation.z=baseRotZ-turns*e;
-          // purely horizontal roll — height stays constant
-          grp.position.y=rad;
-        }, end(){ grp.position.y=rad; }});
+        // Heavy clear: a tiny stuck moment, then drag + roll with a few terrain
+        // bumps before the log settles into the brush.
+        const D=3.7*rollDir;
+        const S=0.42*rollDir;
+        const base={x:grp.position.x,z:grp.position.z,y:grp.position.y,rz:grp.rotation.z,ry:grp.rotation.y,rx:grp.rotation.x};
+        const turns=D/rad;
+        Anim.push({t:0,dur:3.4,fn(k){
+          const pull=clamp((k-0.08)/0.92,0,1);
+          const e=1-Math.pow(1-pull,3);
+          const bump=Math.sin(e*Math.PI*5.5)*(1-e)*0.08;
+          const scrape=Math.sin(e*Math.PI*13)*(1-e)*0.035;
+          grp.position.x=base.x+D*e;
+          grp.position.z=base.z+S*e+scrape;
+          grp.position.y=base.y+bump;
+          grp.rotation.z=base.rz-turns*e+Math.sin(e*Math.PI*6)*(1-e)*0.12;
+          grp.rotation.y=base.ry+rollDir*(0.18*e+Math.sin(e*Math.PI*2.5)*(1-e)*0.08);
+          grp.rotation.x=base.rx+Math.sin(e*Math.PI*4)*(1-e)*0.08;
+        }, end(){
+          AudioSys.snap(base.x+D,base.z+S);
+          scatterLogDebris(base.x+D*0.72,base.z+S*0.72,rollDir,rad);
+          grp.position.set(base.x+D,rad,base.z+S);
+          grp.rotation.z=base.rz-turns;
+          grp.rotation.y=base.ry+rollDir*0.18;
+          grp.rotation.x=base.rx;
+          it.x=grp.position.x; it.z=grp.position.z;
+        }});
         Game.tasks.branches++; Events.fire("branchCleared"); UI.refresh();
       }});
+    it.stage=0; it.hold=0; it.needRelease=false; it.animating=false;
     branches.push(it);
   });
 }
@@ -1252,7 +1662,10 @@ function buildWhiteMarkers(trees){
       use(){
         it.active=false;
         AudioSys.play("brush",0.7)||0;
-        Anim.push({t:0,dur:0.9,fn(k){m.material.color.lerpColors(new THREE.Color(0x8d8d7c),new THREE.Color(0xeeeede),k);}});
+        const worn=TEX.markerBlaze("#aaa68d",true);
+        Anim.push({t:0,dur:0.9,fn(k){
+          m.material.color.lerpColors(new THREE.Color(0x5a5545),new THREE.Color(0xb0aa91),k);
+        },end(){ m.material.map=worn; m.material.color.setHex(0xffffff); m.material.needsUpdate=true; }});
         Game.tasks.markers++; Events.fire("markerPainted"); UI.refresh();
       }});
     whiteMarkers.push(it);
@@ -1320,6 +1733,90 @@ function restoreOneMarker(){
 /* ============================ events / triggers / phases ============================ */
 const Triggers=[]; // {x,z,r,once?,cond?,fn,fired?}
 const Anim=[];     // {t,dur,fn(k),end?}
+const Rain={
+  active:false, mesh:null, mist:null, pos:null, speeds:null, mistPos:null, mistSpeeds:null,
+  count:1150, mistCount:190,
+  start(){
+    if(this.active) return;
+    this.active=true;
+    const p=Game.player;
+    this.pos=new Float32Array(this.count*6);
+    this.speeds=new Float32Array(this.count);
+    for(let i=0;i<this.count;i++){
+      const x=p.x+R(-31,31), y=R(2,17), z=p.z+R(-31,31), len=R(0.75,1.65);
+      this.pos[i*6]=x; this.pos[i*6+1]=y; this.pos[i*6+2]=z;
+      this.pos[i*6+3]=x-R(0.12,0.38); this.pos[i*6+4]=y-len; this.pos[i*6+5]=z+R(0.12,0.34);
+      this.speeds[i]=R(9.5,16.5);
+    }
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute("position",new THREE.BufferAttribute(this.pos,3));
+    const mat=new THREE.LineBasicMaterial({color:0xb8c6c1,transparent:true,opacity:0.38,fog:true});
+    this.mesh=new THREE.LineSegments(geo,mat);
+    this.mesh.renderOrder=4;
+    scene.add(this.mesh);
+    this.mistPos=new Float32Array(this.mistCount*3);
+    this.mistSpeeds=new Float32Array(this.mistCount);
+    for(let i=0;i<this.mistCount;i++){
+      const j=i*3;
+      this.mistPos[j]=p.x+R(-28,28); this.mistPos[j+1]=R(0.15,3.2); this.mistPos[j+2]=p.z+R(-28,28);
+      this.mistSpeeds[i]=R(0.18,0.55);
+    }
+    const mistGeo=new THREE.BufferGeometry();
+    mistGeo.setAttribute("position",new THREE.BufferAttribute(this.mistPos,3));
+    const mistMat=new THREE.PointsMaterial({
+      color:0x9aa9a5,transparent:true,opacity:0.16,size:1.15,sizeAttenuation:true,
+      depthWrite:false,fog:true
+    });
+    this.mist=new THREE.Points(mistGeo,mistMat);
+    this.mist.renderOrder=3;
+    scene.add(this.mist);
+    const fogFrom=scene.fog.density, fogColorFrom=scene.fog.color.clone();
+    const fogColorTo=new THREE.Color(0x1c2525);
+    const hemiFrom=hemi.intensity, moonFrom=moon.intensity;
+    Anim.push({t:0,dur:7.5,fn(k){
+      const e=1-Math.pow(1-k,3);
+      scene.fog.density=lerp(fogFrom,0.104,e);
+      scene.fog.color.copy(fogColorFrom).lerp(fogColorTo,e);
+      scene.background.copy(scene.fog.color);
+      if(skyDome){
+        skyDome.material.uniforms.bottom.value.copy(scene.fog.color);
+        skyDome.material.uniforms.top.value.setRGB(lerp(0.02,0.014,e),lerp(0.03,0.018,e),lerp(0.04,0.022,e));
+      }
+      hemi.intensity=lerp(hemiFrom,0.43,e);
+      moon.intensity=lerp(moonFrom,0.10,e);
+    }});
+    if(AudioSys.ready){
+      AudioSys.setWind(0.42,7);
+      AudioSys.setCrickets(0.08,8);
+      AudioSys.startRain(0.36,6);
+    }
+  },
+  tick(dt){
+    if(!this.active||!this.mesh) return;
+    const p=Game.player;
+    for(let i=0;i<this.count;i++){
+      const j=i*6, len=this.pos[j+1]-this.pos[j+4];
+      let x=this.pos[j]-dt*1.45, y=this.pos[j+1]-this.speeds[i]*dt, z=this.pos[j+2]+dt*0.72;
+      if(y<0.03 || Math.abs(x-p.x)>34 || Math.abs(z-p.z)>34){
+        x=p.x+R(-31,31); y=R(8,17); z=p.z+R(-31,31);
+      }
+      this.pos[j]=x; this.pos[j+1]=y; this.pos[j+2]=z;
+      this.pos[j+3]=x-0.24; this.pos[j+4]=y-len; this.pos[j+5]=z+0.20;
+    }
+    this.mesh.geometry.attributes.position.needsUpdate=true;
+    if(this.mist){
+      for(let i=0;i<this.mistCount;i++){
+        const j=i*3;
+        let x=this.mistPos[j]-dt*this.mistSpeeds[i], y=this.mistPos[j+1]+Math.sin(performance.now()*0.001+i)*dt*0.08, z=this.mistPos[j+2]+dt*this.mistSpeeds[i]*0.55;
+        if(Math.abs(x-p.x)>31 || Math.abs(z-p.z)>31 || y>3.4){
+          x=p.x+R(-28,28); y=R(0.08,1.5); z=p.z+R(-28,28);
+        }
+        this.mistPos[j]=x; this.mistPos[j+1]=y; this.mistPos[j+2]=z;
+      }
+      this.mist.geometry.attributes.position.needsUpdate=true;
+    }
+  }
+};
 const Events={
   fired:new Set(),
   fire(name){
@@ -1328,6 +1825,8 @@ const Events={
         if(Game.tasks.branches===2 && !this.fired.has("snap")){ this.fired.add("snap");
           setTimeout(()=>{const p=Game.player;
             AudioSys.snap(p.x-Math.sin(p.yaw)*7,p.z-Math.cos(p.yaw)*7);},1800); }
+        if(Game.tasks.branches===2 && !this.fired.has("rain")){ this.fired.add("rain");
+          Rain.start(); UI.toast(STR.toastRain); }
         if(Game.tasks.branches>=Game.tasks.branchesTotal) UI.toast(STR.toastBranchesDone);
         Phases.checkIntroDone(); break;
       case "markerPainted":
@@ -1337,6 +1836,7 @@ const Events={
         }
         Phases.checkIntroDone(); break;
       case "shedSign":
+        revealShedTreeScreen();
         if(Game.phase==="shed") Phases.toOutpost(); break;
       case "radioChecked":
         AudioSys.dispatch("continue"); UI.glitch(); UI.refresh(); break;
@@ -1347,7 +1847,7 @@ const Events={
             Glimpse.show(pathX(-80)-6,-80,4500); }
           if(!this.fired.has("signFlip") && Game.tasks.erased>=3){ this.fired.add("signFlip");
             Game.signChanged=true;
-            trailheadSign.material.map=TEX.sign(STR.signTrailheadChanged,{w:300,h:170,size:13,top:40,lh:26});
+            trailheadSign.material.map=TEX.parkMainSign(false);
             trailheadSign.material.needsUpdate=true; }
           if(Game.tasks.erased>=Game.tasks.eraseTotal) Phases.toReturn();
         }
@@ -1420,6 +1920,7 @@ const Endings={
   good(){
     if(this.done)return; this.done=true; Game.state="ended";
     AudioSys.setWind(0,3);
+    AudioSys.setRain(0,3);
     UI.fadeOut(()=>UI.ending(STR.endGoodTitle,STR.endGoodText));
   },
   bad(){
@@ -1470,7 +1971,9 @@ const UI={
   read(text){
     Game.state="reading";
     if(Input.locked) document.exitPointerLock();
-    $("readpaper").textContent=text;
+    const paper=$("readpaper");
+    paper.className = text===STR.noteShed ? "notice" : "";
+    paper.textContent=text;
     $("readclose").textContent=STR.close;
     $("read").style.display="block";
   },
@@ -1523,6 +2026,13 @@ function resolveCollisions(){
   p.z=clamp(p.z,-200,21);
 }
 let bestInteract=null;
+function branchPrompt(it){
+  const stage=Math.min((it.stage||0)+1,3);
+  const pct=Math.min(99,Math.floor(((it.hold||0)/0.9)*100));
+  if(it.animating) return `Moving log... (${Math.min((it.stage||0),3)}/3)`;
+  if(it.needRelease) return `Release, then hold again (${stage}/3)`;
+  return `${STR.pBranch} (${stage}/3)${it.hold?` ${pct}%`:""}`;
+}
 function findInteract(){
   const p=Game.player;
   const fx=-Math.sin(p.yaw),fz=-Math.cos(p.yaw);
@@ -1539,7 +2049,23 @@ function findInteract(){
     if(score>bs){bs=score;best=it;}
   }
   bestInteract=best;
-  UI.prompt(best?best.prompt:"");
+  UI.prompt(best ? (best.type==="branch" ? branchPrompt(best) : best.prompt) : "");
+}
+function updateBranchHold(dt,held){
+  for(const it of branches){
+    if(it!==bestInteract || !it.active){
+      if(!held || it!==bestInteract) it.hold=0;
+      continue;
+    }
+    if(!held){ it.hold=0; it.needRelease=false; continue; }
+    if(it.needRelease || it.animating) continue;
+    it.hold=(it.hold||0)+dt;
+    if(it.hold>=0.9){
+      it.hold=0;
+      it.needRelease=true;
+      it.use&&it.use();
+    }
+  }
 }
 function update(dt){
   const p=Game.player;
@@ -1568,6 +2094,8 @@ function update(dt){
     if(p.stepAcc>0.58){p.stepAcc=0;AudioSys.footstep();}
   } else p.bob=lerp(p.bob,Math.round(p.bob/Math.PI)*Math.PI,dt*6);
   // interaction
+  const branchHeld=Input.isInteractHeld(pad.A);
+  updateBranchHold(dt,branchHeld);
   if(pad.A)Input.interact=true;
   if(pad.B)Input.flash=true;
   if(Input.consumeFlash()){ Game.flashOn=!Game.flashOn;
@@ -1575,7 +2103,7 @@ function update(dt){
     AudioSys.staticBurst(0.04,0.07); }
   if(Input.consumeInteract()){
     if(Game.state==="reading"){UI.closeRead();}
-    else if(bestInteract){
+    else if(bestInteract && bestInteract.type!=="branch"){
       if(bestInteract.text!==undefined){ UI.read(bestInteract.text); bestInteract.use&&bestInteract.use(); }
       else bestInteract.use&&bestInteract.use();
     }
@@ -1593,6 +2121,7 @@ function update(dt){
     a.fn(k); if(k>=1){a.end&&a.end();Anim.splice(i,1);} }
   Glimpse.tick();
   Restorer.tick(performance.now());
+  Rain.tick(dt);
   // dawn pressure
   if(Game.dawnT>0){
     Game.dawnT-=dt;

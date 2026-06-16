@@ -1,0 +1,24 @@
+Higgsfield asset prompt: fallen_log.glb
+
+Generate a high fidelity game-ready fallen pine log for a first-person forest trail horror game.
+
+Asset requirements:
+- One single storm-fallen tree trunk, no ground, no background, no extra scene objects.
+- Length: about 4.4 meters. Diameter: about 0.7 meters.
+- Center the model on its long axis so it can roll naturally in-game.
+- Long axis should be the most obvious dimension; keep pivot near the geometric center.
+- Rough dark bark with irregular ridges, moss patches, cracks, broken branch nubs, and snapped splintered pale wood at both ends.
+- PBR materials preferred: bark material plus inner exposed wood material.
+- Export as a self-contained GLB named fallen_log.glb.
+- Keep it web friendly: detailed enough for close first-person inspection, but not so dense that three copies hurt browser performance.
+
+Drop the exported file here:
+assets/models/fallen_log.glb
+
+The game will use that GLB automatically when present. If it is missing, it falls back to the built-in procedural high-detail log.
+
+Generated Higgsfield jobs:
+- Reference image job: 9cfc5d0e-69eb-4ca9-a504-d35fb3bd23e6
+- Textured GLB job: 9f527143-8bc6-41cb-87b7-ea685a4ccb53
+- GLB URL wired into game.js:
+  https://d3u0tzju9qaucj.cloudfront.net/7d051b5a-7bfe-49fe-a484-24e7b3a9458a/802cc8bb-b552-4545-85c0-3c533ab33419.glb
