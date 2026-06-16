@@ -144,7 +144,6 @@ const AudioSys = {
     const g=c.createGain(); g.gain.value=vol;
     let node=s;
     if(opts.radio){ node=this._radioChain(s); }
-    else if(opts.garble){ node=this._garbleChain(s); }
     node.connect(g); g.connect(this.master);
     s.start(c.currentTime, opts.offset||0, opts.dur);
     return s;
@@ -157,24 +156,6 @@ const AudioSys = {
     for(let i=0;i<256;i++){const x=i/128-1;curve[i]=Math.tanh(x*3);}
     ws.curve=curve;
     src.connect(bp); bp.connect(ws);
-    return ws;
-  },
-  // garbled radio: the voice is there but words can't be made out — a wobbling
-  // narrow bandpass + ring-modulation tremolo + hard distortion smear it.
-  _garbleChain(src){
-    const c=this.ctx, now=c.currentTime;
-    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1100; bp.Q.value=6;
-    const lfo=c.createOscillator(); lfo.type="sine"; lfo.frequency.value=7.5;
-    const lfoG=c.createGain(); lfoG.gain.value=650;
-    lfo.connect(lfoG); lfoG.connect(bp.frequency); lfo.start(now);
-    const ring=c.createGain(); ring.gain.value=0.5;
-    const ros=c.createOscillator(); ros.type="square"; ros.frequency.value=22;
-    const rg=c.createGain(); rg.gain.value=0.5;
-    ros.connect(rg); rg.connect(ring.gain); ros.start(now);
-    const ws=c.createWaveShaper(); const curve=new Float32Array(256);
-    for(let i=0;i<256;i++){const x=i/128-1;curve[i]=Math.tanh(x*7);}
-    ws.curve=curve;
-    src.connect(bp); bp.connect(ring); ring.connect(ws);
     return ws;
   },
   // little procedural sounds
@@ -236,25 +217,13 @@ const AudioSys = {
       s.connect(g);g.connect(this.master);s.start(); }
   },
   dispatch(which, after=0.8){
-    // static lead-in, then a garbled transmission you can't make out, static tail
+    // static lead-in, voice through the radio chain, static tail
     this.staticBurst(0.4,1.1);
-    setTimeout(()=>{ this.play(which==="continue"?"vo1":"vo2",0.95,{garble:true});
-      UI.radioLine(STR.radioGarbled);
+    setTimeout(()=>{ this.play(which==="continue"?"vo1":"vo2",0.9,{radio:true});
+      const txt = which==="continue"?STR.radioContinue:STR.radioConfirmed;
+      UI.radioLine(txt);
       setTimeout(()=>this.staticBurst(0.3,0.9), 1600);
     }, after*1000);
-  },
-  // the concerned transmission at the clearing — clearer than the dispatch lines,
-  // a real voice that has noticed where you are. Text surfaces on-screen.
-  dispatchConcerned(){
-    this.staticBurst(0.5,1.3);
-    setTimeout(()=>{
-      // reuse a voice clip but cleaner (radio chain, not garble) so a human reads through
-      this.play("vo1",1.0,{radio:true});
-      UI.radioLine(STR.radioConcerned1);
-      UI.glitch();
-    }, 1300);
-    setTimeout(()=>{ this.play("vo2",1.0,{radio:true}); UI.radioLine(STR.radioConcerned2); }, 4200);
-    setTimeout(()=>this.staticBurst(0.4,1.4), 6800);
   },
   footstep(){
     if(!this.buffers.steps){ // procedural thud fallback
@@ -446,6 +415,42 @@ function buildTextures(){
     }
     c.putImageData(img,0,0);
   });
+  TEX.carPaint = makeTileTex(128,(c,S)=>{ // oxidized paint, rust blooms, old leaf staining
+    ditherFill(c,S,[48,70,63],[26,32,24],valueNoiseTile(S,7,rng),0.46);
+    c.fillStyle="rgba(93,47,23,0.78)";
+    for(let i=0;i<34;i++){
+      const x=R(0,S),y=R(0,S),rx=R(2,9),ry=R(1,6);
+      c.beginPath(); c.ellipse(x,y,rx,ry,R(0,Math.PI),0,Math.PI*2); c.fill();
+    }
+    c.fillStyle="rgba(31,45,29,0.72)";
+    for(let i=0;i<24;i++){
+      const x=R(0,S),y=R(0,S),rx=R(3,12),ry=R(1,5);
+      c.beginPath(); c.ellipse(x,y,rx,ry,R(0,Math.PI),0,Math.PI*2); c.fill();
+    }
+    c.strokeStyle="rgba(185,170,124,0.26)";
+    c.lineWidth=1;
+    for(let i=0;i<22;i++){
+      const x=R(0,S),y=R(0,S),len=R(7,28);
+      c.beginPath(); c.moveTo(x,y); c.lineTo(x+len,y+R(-4,4)); c.stroke();
+    }
+  });
+  TEX.crackedGlass = makeTileTex(128,(c,S)=>{
+    const g=c.createLinearGradient(0,0,S,S);
+    g.addColorStop(0,"#172528"); g.addColorStop(0.55,"#0a1113"); g.addColorStop(1,"#263436");
+    c.fillStyle=g; c.fillRect(0,0,S,S);
+    c.fillStyle="rgba(190,210,190,0.06)";
+    for(let i=0;i<18;i++) c.fillRect(R(0,S),R(0,S),R(8,26),1);
+    c.strokeStyle="rgba(218,226,205,0.55)";
+    c.lineWidth=1.1;
+    const cracks=[[24,22,52,48,92,38],[78,20,72,52,103,76],[34,88,58,62,71,94]];
+    cracks.forEach(line=>{
+      c.beginPath(); c.moveTo(line[0],line[1]);
+      for(let i=2;i<line.length;i+=2) c.lineTo(line[i],line[i+1]);
+      c.stroke();
+    });
+    c.strokeStyle="rgba(218,226,205,0.35)";
+    for(let i=0;i<9;i++){ const x=R(26,96),y=R(28,88); c.beginPath(); c.moveTo(x,y); c.lineTo(x+R(-22,22),y+R(-18,18)); c.stroke(); }
+  },{filter:false});
   // text canvases (signs / map) — not tiles
   TEX.sign = (lines,opts={})=>{
     const w=opts.w||256,h=opts.h||160;
@@ -472,26 +477,55 @@ function buildTextures(){
       c.beginPath(); c.moveTo(xx,yy); c.lineTo(xx+R(20,90),yy+R(-5,5)); c.stroke();
     }
   };
+  const signWear=(c,w,h,light=true)=>{
+    for(let i=0;i<90;i++){
+      c.fillStyle=light?`rgba(68,44,24,${R(0.025,0.075)})`:`rgba(238,222,187,${R(0.025,0.08)})`;
+      c.fillRect(R(22,w-34),R(24,h-32),R(1,18),R(1,5));
+    }
+    for(let i=0;i<22;i++){
+      c.strokeStyle=light?`rgba(74,48,27,${R(0.05,0.14)})`:`rgba(236,218,180,${R(0.04,0.12)})`;
+      c.lineWidth=R(0.8,2.4);
+      c.beginPath();
+      const y=R(28,h-30);
+      c.moveTo(R(24,80),y); c.lineTo(w-R(26,80),y+R(-7,7)); c.stroke();
+    }
+  };
+  const drawParkBadge=(c,x,y,s=1,label=true)=>{
+    c.save(); c.translate(x,y); c.scale(s,s);
+    c.fillStyle="#efe1bf"; c.strokeStyle="#2b2117"; c.lineWidth=8;
+    c.beginPath();
+    c.moveTo(54,0); c.bezierCurveTo(88,8,104,36,91,68); c.lineTo(76,118);
+    c.lineTo(28,136); c.lineTo(-14,106); c.lineTo(-25,52);
+    c.bezierCurveTo(-34,20,-6,0,25,8); c.closePath(); c.fill(); c.stroke();
+    c.fillStyle="#ffffff"; c.beginPath(); c.moveTo(34,72); c.lineTo(59,42); c.lineTo(88,80); c.lineTo(67,75); c.lineTo(54,84); c.closePath(); c.fill();
+    c.fillStyle="#8a5d38"; c.beginPath(); c.moveTo(-12,98); c.lineTo(18,78); c.lineTo(44,94); c.lineTo(82,82); c.lineTo(76,119); c.lineTo(25,129); c.closePath(); c.fill();
+    c.fillStyle="#0f5a44";
+    for(let i=0;i<6;i++){
+      c.beginPath();
+      const tx=-2+i*12, ty=72-i*7;
+      c.moveTo(tx,ty-42); c.lineTo(tx-17,ty); c.lineTo(tx+16,ty); c.closePath(); c.fill();
+      c.fillRect(tx-2,ty-2,4,24);
+    }
+    c.fillStyle="#efe1bf"; c.beginPath(); c.ellipse(16,104,13,7,-0.1,0,Math.PI*2); c.fill();
+    if(label){
+      c.fillStyle="#2c2118"; c.font="bold 20px Courier New"; c.textAlign="center";
+      c.fillText("NATIONAL",50,38); c.fillText("PARK",50,62); c.fillText("SERVICE",50,86);
+    }
+    c.restore();
+  };
   TEX.parkMainSign = (closed=true)=>{
     const w=512,h=300,cv=document.createElement("canvas");cv.width=w;cv.height=h;const c=cv.getContext("2d");
     c.clearRect(0,0,w,h);
     rounded(c,18,18,w-36,h-36,28); c.fillStyle="#36271b"; c.fill();
     rounded(c,28,28,w-56,h-56,20); c.fillStyle="#efe1bf"; c.fill();
+    signWear(c,w,h,true);
     c.save(); rounded(c,28,h*0.56,w-56,h*0.32,8); c.clip();
     c.fillStyle="#68442d"; c.fillRect(28,h*0.56,w-56,h*0.32); woodNoise(c,28,h*0.56,w-56,h*0.32,0.20); c.restore();
     c.strokeStyle="#2c2118"; c.lineWidth=9; rounded(c,24,24,w-48,h-48,24); c.stroke();
     c.strokeStyle="#7a573b"; c.lineWidth=4; rounded(c,34,34,w-68,h-68,17); c.stroke();
 
-    // simplified raised park badge, echoing the reference photo without using a raster.
-    c.save(); c.translate(358,64);
-    c.fillStyle="#efe1bf"; c.strokeStyle="#2b2117"; c.lineWidth=8;
-    c.beginPath(); c.moveTo(54,0); c.bezierCurveTo(88,8,104,36,91,68); c.lineTo(76,118);
-    c.lineTo(28,136); c.lineTo(-14,106); c.lineTo(-25,52); c.bezierCurveTo(-34,20,-6,0,25,8); c.closePath(); c.fill(); c.stroke();
-    c.fillStyle="#0f5a44"; c.beginPath(); c.moveTo(20,88); c.lineTo(42,58); c.lineTo(56,88); c.lineTo(86,100); c.lineTo(78,122); c.lineTo(26,128); c.lineTo(-8,104); c.closePath(); c.fill();
-    c.fillStyle="#0b3f30"; for(let i=0;i<5;i++){ c.beginPath(); c.moveTo(16+i*9,38-i*4); c.lineTo(-2+i*7,82); c.lineTo(33+i*8,82); c.closePath(); c.fill(); }
-    c.fillStyle="#ffffff"; c.beginPath(); c.moveTo(40,70); c.lineTo(60,48); c.lineTo(84,76); c.lineTo(66,72); c.lineTo(55,79); c.closePath(); c.fill();
-    c.fillStyle="#2c2118"; c.font="bold 23px Courier New"; c.textAlign="center"; c.fillText("NATIONAL",52,38); c.fillText("PARK",52,64);
-    c.restore();
+    // Raised park badge, echoing the reference photo without relying on a raster.
+    drawParkBadge(c,356,62,1.02,true);
 
     c.textAlign="left";
     c.fillStyle="#2b2117"; c.font="italic 52px Georgia"; c.shadowColor="rgba(72,42,20,.65)"; c.shadowBlur=0; c.shadowOffsetX=3; c.shadowOffsetY=3;
@@ -514,14 +548,21 @@ function buildTextures(){
     c.clearRect(0,0,w,h);
     rounded(c,16,16,w-32,h-32,22); c.fillStyle="#33261c"; c.fill();
     rounded(c,26,26,w-52,h-52,16); c.fillStyle="#efe1bf"; c.fill();
-    c.fillStyle="#5d3d29"; c.fillRect(26,160,w-52,48); woodNoise(c,26,160,w-52,48,0.16);
+    signWear(c,w,h,true);
+    c.fillStyle="#5d3d29"; c.fillRect(26,164,w-52,48); woodNoise(c,26,164,w-52,48,0.16);
     c.strokeStyle="#2b2117"; c.lineWidth=7; rounded(c,21,21,w-42,h-42,20); c.stroke();
-    c.fillStyle="#2b2117"; c.textAlign="center"; c.font="bold 20px Courier New"; c.fillText("LOST PINES",w/2,62);
-    c.fillText("NATIONAL PARK",w/2,88);
-    c.font="bold 32px Courier New"; c.fillStyle="#80261e"; c.fillText("TRAIL 6",w/2,128);
-    c.font="bold 23px Courier New"; c.fillText("CLOSED",w/2,156);
-    c.fillStyle="#efe1bf"; c.font="bold 17px Courier New"; c.fillText("STORM DAMAGE",w/2,190);
-    c.fillStyle="#2b2117"; c.font="bold 15px Courier New"; c.fillText("AUTHORIZED CREW ONLY",w/2,228);
+    c.strokeStyle="#8d6843"; c.lineWidth=3; rounded(c,32,32,w-64,h-64,13); c.stroke();
+    drawParkBadge(c,46,42,0.58,false);
+    c.fillStyle="#2b2117"; c.textAlign="left"; c.font="bold 18px Courier New"; c.fillText("LOST PINES",134,62);
+    c.fillText("NATIONAL PARK",134,86);
+    c.font="bold 13px Courier New"; c.fillStyle="#5a4632"; c.fillText("PARK SERVICE NOTICE",134,109);
+    c.save(); c.translate(w/2,139); c.rotate(-0.06);
+    c.fillStyle="rgba(162,38,29,.94)"; c.fillRect(-132,-24,264,48);
+    c.strokeStyle="rgba(239,225,189,.65)"; c.lineWidth=3; c.strokeRect(-126,-18,252,36);
+    c.fillStyle="#f1dfb8"; c.font="bold 34px Courier New"; c.textAlign="center"; c.fillText("TRAIL 6 CLOSED",0,12);
+    c.restore();
+    c.fillStyle="#efe1bf"; c.font="bold 16px Courier New"; c.textAlign="center"; c.fillText("STORM DAMAGE",w/2,194);
+    c.fillStyle="#2b2117"; c.font="bold 15px Courier New"; c.fillText("AUTHORIZED CREW ONLY",w/2,229);
     const t=new THREE.CanvasTexture(cv); t.magFilter=THREE.NearestFilter; t.colorSpace=THREE.SRGBColorSpace; return t;
   };
   TEX.markerBlaze = (color="#6a6655",fresh=false)=>{
@@ -593,12 +634,11 @@ function buildTextures(){
 /* ============================ scene / renderer ============================ */
 const Game = {
   state:"boot", // boot → start → play → reading → ended
-  player:{x:1.6,y:1.62,z:18,yaw:Math.PI,pitch:0,vx:0,vz:0,bob:0,stepAcc:0},
+  player:{x:1.6,y:1.62,z:18,yaw:0,pitch:0,vx:0,vz:0,bob:0,stepAcc:0},
   flashOn:false,
-  hasMap:false,
   phase:"intro",
   tasks:{branches:0,branchesTotal:3,markers:0,markersTotal:3,shedSign:false,map:false,radio:false,
-         erased:0,eraseTotal:6,inspected:0},
+         erased:0,eraseTotal:6},
   dawnT:-1, dawnTotal:240, timecode:19.7*3600, // 7:42 PM
   ended:false,
 };
@@ -726,6 +766,13 @@ function buildMaterials(){
   MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
   MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
   MATS.stain=new THREE.MeshBasicMaterial({color:0x151411,transparent:true,opacity:0.34,side:THREE.DoubleSide});
+  MATS.carPaint=new THREE.MeshStandardMaterial({map:TEX.carPaint,color:0xb0b6a8,roughness:0.98,metalness:0.04});
+  MATS.carPaintDark=new THREE.MeshStandardMaterial({map:TEX.carPaint,color:0x59645c,roughness:1.0,metalness:0.03});
+  MATS.carRust=new THREE.MeshStandardMaterial({color:0x60341f,roughness:1.0,metalness:0.01,flatShading:true});
+  MATS.carGlass=new THREE.MeshStandardMaterial({map:TEX.crackedGlass,color:0x87958c,transparent:true,opacity:0.72,roughness:0.9,metalness:0.02,side:THREE.DoubleSide});
+  MATS.rubber=new THREE.MeshStandardMaterial({color:0x090b0a,roughness:0.96,metalness:0.0});
+  MATS.deadChrome=new THREE.MeshStandardMaterial({color:0x7f7d70,roughness:0.88,metalness:0.45});
+  MATS.carMoss=new THREE.MeshLambertMaterial({color:0x243b24,side:THREE.DoubleSide});
 }
 function box(w,h,d,mat,x,y,z,ry=0,collide=false,invisible=false){
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
@@ -793,11 +840,7 @@ async function loadTreeMesh(){
 // ---- building meshes (GLB) ----
 const BUILDING_GLB={};
 async function loadBuildingMeshes(){
-  const files={shed:"shed.glb", outpost:"outpost.glb", cabin:"cabin.glb", signpost:"signpost.glb",
-    // bespoke abandoned cabins — generate these in Codex and drop the .glb files in;
-    // they load automatically. Until then the clearing reuses cabin/shed meshes.
-    cabin_abandoned_1:"cabin_abandoned_1.glb", cabin_abandoned_2:"cabin_abandoned_2.glb",
-    cabin_abandoned_3:"cabin_abandoned_3.glb", cabin_abandoned_4:"cabin_abandoned_4.glb"};
+  const files={shed:"shed.glb", outpost:"outpost.glb", cabin:"cabin.glb", signpost:"signpost.glb"};
   const loader=new GLTFLoader();
   for(const [name,fn] of Object.entries(files)){
     try{
@@ -892,6 +935,59 @@ async function loadLogMesh(){
     }catch(e){ if(url!==LOG_GLB_URLS[0]) console.warn("optional log mesh load failed",url,e); }
   }
   LOG_GLB=null;
+}
+
+// ---- trailhead sign pair (Higgsfield GLB), replaces the procedural wood signs ----
+let PARK_SIGN_GLB=null;
+const PARK_SIGN_GLB_URLS=[
+  "./assets/models/lost_pines_sign_pair.glb"
+];
+async function loadParkSignMesh(){
+  for(const url of PARK_SIGN_GLB_URLS){
+    try{
+      const response=await fetch(url,{cache:"no-store"});
+      if(!response.ok) continue;
+      const objectUrl=URL.createObjectURL(await response.blob());
+      const gltf=await new Promise((resolve,reject)=>{
+        new GLTFLoader().load(objectUrl,resolve,undefined,reject);
+      }).finally(()=>URL.revokeObjectURL(objectUrl));
+      const root=gltf.scene;
+      root.updateWorldMatrix(true,true);
+      const bb=new THREE.Box3().setFromObject(root);
+      const center=new THREE.Vector3((bb.min.x+bb.max.x)/2,bb.min.y,(bb.min.z+bb.max.z)/2);
+      root.position.sub(center);
+      root.updateWorldMatrix(true,true);
+      const dims={w:bb.max.x-bb.min.x,h:bb.max.y-bb.min.y,d:bb.max.z-bb.min.z};
+      root.traverse(o=>{
+        if(o.isMesh && o.material){
+          const mats=Array.isArray(o.material)?o.material:[o.material];
+          for(const mat of mats){
+            mat.fog=true;
+            if("roughness" in mat) mat.roughness=Math.min(1.0,mat.roughness??0.95);
+            if("metalness" in mat) mat.metalness=Math.min(0.08,mat.metalness??0.0);
+            mat.side=THREE.DoubleSide;
+          }
+        }
+      });
+      PARK_SIGN_GLB={root,dims};
+      return;
+    }catch(e){ console.warn("park sign GLB load failed",url,e); }
+  }
+  PARK_SIGN_GLB=null;
+}
+function placeParkSignPair(x,z,ry,targetW){
+  if(!PARK_SIGN_GLB) return null;
+  const g=PARK_SIGN_GLB.root.clone(true);
+  const k=targetW/(PARK_SIGN_GLB.dims.w||1);
+  g.scale.setScalar(k);
+  g.rotation.y=ry;
+  g.position.set(x,0,z);
+  g.updateWorldMatrix(true,true);
+  const bb=new THREE.Box3().setFromObject(g);
+  g.position.y += -bb.min.y + 0.38;
+  scene.add(g);
+  addBoxCol(x,z,targetW+0.6,0.95,ry);
+  return g;
 }
 function makeFallenLog(length=4.4, radius=0.36, seed=0){
   const group=new THREE.Group();
@@ -1331,21 +1427,9 @@ function buildOutpost(){
            else UI.read(STR.noteRadioDead); }});
   plane(0.3,0.4,MATS.paper,x-1.3,1.0,z-1.1,0.2,-Math.PI/2+0.06);
   addInteract({x:x-1.3,z:z-1.1,y:1.0,r:1.6,type:"read",prompt:STR.pRead,text:STR.noteDesk,use(){}});
-  // a folded PARK MAP on the desk — pick it up and it becomes a live minimap in
-  // the bottom-left that you follow.
-  const mapProp=plane(0.34,0.26,MATS.paper,x-0.6,1.0,z-1.15,0.12,-0.3);
-  const mapInt=addInteract({x:x-0.6,z:z-1.15,y:1.0,r:1.7,type:"map",prompt:STR.pTakeMap,
-    use(){
-      if(Game.hasMap) return;
-      Game.hasMap=true;
-      mapProp.visible=false; mapInt.active=false;
-      Game.tasks.map=true; Events.fire("mapChecked");
-      UI.showMinimap();
-      UI.toast(STR.toastMapTaken);
-    }});
   plane(1.5,1.1,new THREE.MeshLambertMaterial({map:TEX.wallMap()}),x-W/2+0.1,1.7,z+0.6,Math.PI/2);
   addInteract({x:x-W/2+0.5,z:z+0.6,y:1.7,r:2.0,type:"read",prompt:STR.pRead,text:STR.noteWallMap,
-    use(){}});
+    use(){ Game.tasks.map=true; Events.fire("mapChecked"); }});
   plane(1.1,0.8,new THREE.MeshLambertMaterial({map:TEX.sign("TRAIL ADVISORIES\n\n[      ]   [      ]\n\n[  6  — missing  ]",{w:220,h:160,size:12,top:30,lh:24})}),
     x+1.4,1.7,z-D/2+0.09,0);
   addInteract({x:x+1.4,z:z-D/2+0.5,y:1.7,r:1.8,type:"read",prompt:STR.pRead,text:STR.noteMissing,use(){}});
@@ -1450,169 +1534,121 @@ function buildCabin(){ // distant boarded cabin — set dressing
     box(3.4,2.3,2.8,MATS.planksDark,x,1.35,z,0.4,true,true); // invisible collider
   }
 }
-
-// ============================================================================
-// THE ABANDONED CLEARING — revealed after all markers are collected. A cluster of
-// long-abandoned cabins past the end of the trail. Inspecting each reveals how
-// long they've been empty; the last one triggers the concerned radio + lost path.
-// ============================================================================
-let clearingGroup=null;
-const clearingCabins=[];
-function buildAbandonedClearing(){
-  clearingGroup=new THREE.Group(); clearingGroup.visible=false; scene.add(clearingGroup);
-  // clearing centered past the trail end
-  const cz=-228, cx=pathX(-198);
-  // prefer bespoke abandoned cabins; fall back to existing cabin/outpost/shed meshes
-  const pick=(i)=>{
-    const bespoke=["cabin_abandoned_1","cabin_abandoned_2","cabin_abandoned_3","cabin_abandoned_4"][i];
-    if(BUILDING_GLB[bespoke]) return bespoke;
-    return ["cabin","outpost","shed","cabin"][i];
-  };
-  const spots=[
-    {x:cx-12,z:cz+6, ry:0.6},
-    {x:cx+11,z:cz+2, ry:-0.7},
-    {x:cx-7, z:cz-12,ry:2.4},
-    {x:cx+9, z:cz-14,ry:-2.1},
+function makeTrailheadLogProp(x,z,ry,len=2.4,seed=0){
+  let grp, rad=0.28;
+  if(LOG_GLB){
+    grp=new THREE.Group();
+    const m=new THREE.Mesh(LOG_GLB.geometry,LOG_GLB.material);
+    const k=len/(LOG_GLB.longest||1);
+    m.scale.setScalar(k);
+    const d=LOG_GLB.dims;
+    if(d.z>=d.x && d.z>=d.y) m.rotation.y=Math.PI/2;
+    else if(d.y>=d.x && d.y>=d.z) m.rotation.z=Math.PI/2;
+    rad=0.5*k*Math.min(d.x,d.y,d.z);
+    if(rad<0.18) rad=0.24;
+    grp.add(m);
+  } else {
+    rad=0.24;
+    grp=makeFallenLog(len,rad,seed);
+  }
+  grp.position.set(x,rad+0.035,z);
+  grp.rotation.y=ry;
+  scene.add(grp);
+  return grp;
+}
+function addTrailheadLogPile(x,z){
+  const pile=[
+    {x:x-1.65,z:z-1.05,ry:0.22,len:2.35,seed:10.1},
+    {x:x-0.95,z:z-1.35,ry:-0.16,len:1.95,seed:12.4},
+    {x:x+1.35,z:z-1.08,ry:-0.24,len:2.15,seed:14.8},
+    {x:x+1.85,z:z-1.45,ry:0.18,len:1.75,seed:16.2}
   ];
-  spots.forEach((s,i)=>{
-    const name=pick(i);
-    const b=BUILDING_GLB[name];
-    if(b){
-      const g=b.root.clone(true);
-      const k=4.6/(b.dims.w||1); g.scale.setScalar(k);
-      g.rotation.y=s.ry; g.updateWorldMatrix(true,true);
-      const bb=new THREE.Box3().setFromObject(g);
-      g.position.set(s.x,-bb.min.y,s.z);
-      clearingGroup.add(g);
-    } else {
-      // procedural derelict fallback
-      const m=new THREE.Mesh(new THREE.BoxGeometry(3.6,2.4,3.0),MATS.planksDark);
-      m.position.set(s.x,1.2,s.z); m.rotation.y=s.ry; clearingGroup.add(m);
-    }
-    addBoxCol(s.x,s.z,4.2,4.2,s.ry);
-    // inspect interactable in front of each cabin door
-    const ix=s.x+Math.sin(s.ry+Math.PI)*2.6, iz=s.z+Math.cos(s.ry+Math.PI)*2.6;
-    const it=addInteract({x:ix,z:iz,y:1.2,r:2.6,type:"inspect",prompt:STR.pInspect,active:false,
-      text:STR["cabinNote"+(i+1)],
-      use(){
-        if(it.done) return; it.done=true;
-        it.active=false;
-        Game.tasks.inspected=(Game.tasks.inspected||0)+1;
-        AudioSys.creak(ix,iz);
-        UI.refresh();
-        Events.fire("cabinInspected");
-      }});
-    clearingCabins.push(it);
+  pile.forEach((p,i)=>{
+    const log=makeTrailheadLogProp(p.x,p.z,p.ry,p.len,p.seed);
+    log.rotation.z=R(-0.08,0.08);
+    log.rotation.x=R(-0.04,0.04);
+    if(i===1 || i===3) log.position.y+=0.08;
   });
-  // a few dead trees + a cold fire ring to dress the clearing
-  for(let i=0;i<5;i++){
-    const a=rng()*6.28, rr=R(14,22);
-    box(0.3,R(3,5),0.3,MATS.woodDark, cx+Math.cos(a)*rr, 2, cz+Math.sin(a)*rr, rng());
+  for(let i=0;i<16;i++){
+    const mat=i%2?MATS.leafA:MATS.leafB;
+    const leaf=plane(R(0.12,0.28),R(0.05,0.13),mat.clone(),
+      x+R(-2.15,2.15),0.018,z+R(-1.75,-0.65),R(0,Math.PI),-Math.PI/2);
+    leaf.material.opacity=0.9;
   }
-}
-function revealClearing(){
-  if(clearingGroup) clearingGroup.visible=true;
-  for(const it of clearingCabins) it.active=true;
-}
-
-// ============================================================================
-// SHADOW WALKERS — black humanoid silhouettes that walk between the trees behind
-// the player while inspecting the cabins. Never approach; just drift across,
-// half-seen between trunks.
-// ============================================================================
-const ShadowWalkers={
-  list:[], active:false,
-  build(){
-    for(let i=0;i<5;i++){
-      const g=new THREE.Group();
-      const torso=new THREE.Mesh(new THREE.CapsuleGeometry?new THREE.CylinderGeometry(0.16,0.2,1.0,7):new THREE.CylinderGeometry(0.16,0.2,1.0,7),MATS.dark);
-      torso.position.y=1.05; g.add(torso);
-      const head=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),MATS.dark); head.position.y=1.7; g.add(head);
-      const la=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.8,5),MATS.dark); la.position.set(-0.14,0.45,0); g.add(la);
-      const ra=la.clone(); ra.position.x=0.14; g.add(ra);
-      g.visible=false; g.userData={phase:rng()*6.28,speed:R(0.5,0.9),baseX:0,baseZ:0,dir:1};
-      scene.add(g); this.list.push(g);
-    }
-  },
-  start(){
-    if(this.active) return; this.active=true;
-    const p=Game.player;
-    this.list.forEach((g,i)=>{
-      // place them in a ring behind/around the clearing, among the trees
-      const a=Math.PI*0.5 + (i/this.list.length)*Math.PI*1.0 + R(-0.3,0.3);
-      const r=R(16,26);
-      g.userData.baseX=p.x+Math.cos(a)*r;
-      g.userData.baseZ=p.z+Math.sin(a)*r;
-      g.userData.dir=rng()<0.5?1:-1;
-      g.position.set(g.userData.baseX,0,g.userData.baseZ);
-      g.visible=true;
-    });
-    AudioSys.creak(p.x+10,p.z+10);
-  },
-  stop(){ this.active=false; for(const g of this.list) g.visible=false; },
-  tick(dt){
-    if(!this.active) return;
-    const t=performance.now()*0.001;
-    for(const g of this.list){
-      const u=g.userData;
-      // drift sideways between trees, bobbing slightly; face travel direction
-      u.baseX += Math.cos(u.phase)*u.speed*u.dir*dt*1.4;
-      u.baseZ += Math.sin(u.phase)*u.speed*u.dir*dt*1.4;
-      g.position.x=u.baseX; g.position.z=u.baseZ;
-      g.position.y=Math.sin(t*4+u.phase)*0.03;
-      g.rotation.y=Math.atan2(Math.cos(u.phase)*u.dir,Math.sin(u.phase)*u.dir);
-      // keep them at a distance — if they wander too close, push them out
-      const d=Math.hypot(g.position.x-Game.player.x,g.position.z-Game.player.z);
-      if(d<11){ u.dir*=-1; }
-    }
-  }
-};
-
-// Close the original path: fill the trail behind the player with trees so they
-// can't retrace their steps back to the car.
-let pathClosed=false;
-function closeThePath(){
-  if(pathClosed||!TREE_GLBS.length) return; pathClosed=true;
-  const M=new THREE.Matrix4(),Q=new THREE.Quaternion(),S=new THREE.Vector3(),P=new THREE.Vector3();
-  const buckets=TREE_GLBS.map(()=>[]);
-  // pack trees densely right across and along the whole trail corridor
-  for(let z=12; z>=-204; z-=2.0){
-    const px=pathX(z);
-    for(let off=-6; off<=6; off+=2.2){
-      buckets[Math.floor(rng()*TREE_GLBS.length)].push({x:px+off+R(-0.8,0.8), z:z+R(-0.8,0.8), s:R(0.9,1.5), rot:rng()*6.28});
-    }
-  }
-  const TARGET_H=7.0;
-  TREE_GLBS.forEach((glb,vi)=>{
-    const mine=buckets[vi]; if(!mine.length) return;
-    const k=TARGET_H/(glb.unitH||1);
-    const inst=new THREE.InstancedMesh(glb.geometry,glb.material,mine.length);
-    mine.forEach((tr,i)=>{ P.set(tr.x,0,tr.z);Q.setFromEuler(new THREE.Euler(0,tr.rot,0));const sc=k*tr.s;S.set(sc,sc,sc);M.compose(P,Q,S);inst.setMatrixAt(i,M);
-      addCircle(tr.x,tr.z,0.6); });
-    inst.instanceMatrix.needsUpdate=true; scene.add(inst);
-  });
-  // also lift the soft z-bound so the player is now penned in the clearing
-  Game.penned=true;
 }
 function buildTrailhead(){
-  const x=pathX(8.5),z=8.5;
+  const x=Game.player.x+0.25,z=11.4;
+  if(PARK_SIGN_GLB){
+    const model=placeParkSignPair(x,z,0,4.35);
+    trailheadSign=null;
+    addInteract({x:x-1.25,z:z+0.05,y:1.35,r:2.55,type:"read",prompt:STR.pRead,
+      get text(){ return Game.signChanged?STR.signTrailheadChanged:STR.signTrailhead; },use(){}});
+    addInteract({x:x+1.25,z:z+0.03,y:1.35,r:2.35,type:"read",prompt:STR.pRead,text:STR.signTrailhead,use(){}});
+    if(model){
+      for(let i=0;i<7;i++){
+        const leafMat=i%2?MATS.leafA:MATS.leafB;
+        const leaf=plane(R(0.12,0.22),R(0.05,0.11),leafMat.clone(),
+          x+R(-2.0,2.0),0.014,z+R(-0.35,0.55),R(0,Math.PI),-Math.PI/2);
+        leaf.material.opacity=0.9;
+      }
+    }
+    addTrailheadLogPile(x,z);
+  } else {
   const buildSign=(sx,sz,ry,w,h,map,wide=false)=>{
-    const postGap=w*(wide?0.36:0.38);
-    const lift=1.25;
-    box(0.12,1.85,0.12,MATS.woodDark,sx-postGap,0.92,sz,ry,true);
-    box(0.12,1.85,0.12,MATS.woodDark,sx+postGap,0.92,sz,ry,true);
-    box(w+0.18,h+0.16,0.09,MATS.planksDark,sx,lift,sz+0.04,ry,true,false);
-    const face=plane(w,h,new THREE.MeshLambertMaterial({map,transparent:true,alphaTest:0.04}),sx,lift,sz-0.035,ry);
-    const cap=box(w+0.25,0.08,0.18,MATS.woodDark,sx,lift+h*0.53,sz+0.01,ry,false);
-    cap.rotation.x=-0.16;
+    const group=new THREE.Group();
+    group.position.set(sx,0,sz); group.rotation.y=ry; scene.add(group);
+    const postGap=w*(wide?0.39:0.42);
+    const lift=1.34;
+    const postGeo=new THREE.CylinderGeometry(0.08,0.12,2.15,10);
+    for(const side of [-1,1]){
+      const p=new THREE.Mesh(postGeo,MATS.woodDark);
+      p.position.set(side*postGap,1.02,0.10);
+      p.rotation.z=side*0.035;
+      group.add(p);
+      const cap=new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.13,0.08,10),MATS.woodDark);
+      cap.position.set(side*postGap,2.12,0.10); group.add(cap);
+      const foot=new THREE.Mesh(new THREE.DodecahedronGeometry(0.18,0),MATS.rock);
+      foot.scale.set(1.15,0.5,0.9); foot.position.set(side*postGap,0.09,0.10); group.add(foot);
+    }
+    const back=new THREE.Mesh(new THREE.BoxGeometry(w+0.24,h+0.22,0.13),MATS.planksDark);
+    back.position.set(0,lift,0.04); group.add(back);
+    const shadow=new THREE.Mesh(new THREE.BoxGeometry(w+0.06,h+0.04,0.05),MATS.woodDark);
+    shadow.position.set(0,lift,0.005); group.add(shadow);
+    const face=new THREE.Mesh(new THREE.PlaneGeometry(w,h),
+      new THREE.MeshLambertMaterial({map,transparent:true,alphaTest:0.04}));
+    face.position.set(0,lift,0.125); group.add(face);
+    const top=new THREE.Mesh(new THREE.BoxGeometry(w+0.38,0.09,0.2),MATS.woodDark);
+    top.position.set(0,lift+h*0.55,0.02); top.rotation.x=-0.12; group.add(top);
+    const bottom=new THREE.Mesh(new THREE.BoxGeometry(w+0.22,0.07,0.15),MATS.woodDark);
+    bottom.position.set(0,lift-h*0.55,0.04); group.add(bottom);
+    const rail=new THREE.Mesh(new THREE.BoxGeometry(w+0.34,0.06,0.16),MATS.woodDark);
+    rail.position.set(0,0.72,0.12); group.add(rail);
+    for(const bx of [-w*0.43,w*0.43]){
+      for(const by of [-h*0.39,h*0.39]){
+        const bolt=new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,0.018,8),MATS.metal);
+        bolt.rotation.x=Math.PI/2; bolt.position.set(bx,lift+by,0.14); group.add(bolt);
+      }
+    }
+    for(let i=0;i<5;i++){
+      const leafMat=i%2?MATS.leafA:MATS.leafB;
+      const leaf=plane(R(0.12,0.22),R(0.05,0.11),leafMat.clone(),
+        sx+Math.cos(ry)*R(-w*0.55,w*0.55)+R(-0.2,0.2),
+        0.014,
+        sz+R(-0.25,0.35),
+        R(0,Math.PI),-Math.PI/2);
+      leaf.material.opacity=0.9;
+    }
+    addBoxCol(sx,sz,w+0.7,0.55,ry);
     return face;
   };
-  // Two carved park signs flank the entrance rather than sitting awkwardly in the path.
-  trailheadSign=buildSign(x-2.25,z+0.15,0.16,2.35,1.38,TEX.parkMainSign(true),true);
-  const closureSign=buildSign(x+2.2,z+0.05,-0.16,1.62,1.1,TEX.parkClosureSign(),false);
-  addInteract({x:x-2.25,z:z+0.15,y:1.3,r:2.4,type:"read",prompt:STR.pRead,
+  // Two carved National Park-style signs flank the entrance.
+  trailheadSign=buildSign(x-1.25,z+0.05,0.05,2.08,1.28,TEX.parkMainSign(true),true);
+  const closureSign=buildSign(x+1.25,z+0.03,-0.05,1.58,1.12,TEX.parkClosureSign(),false);
+  addInteract({x:x-1.25,z:z+0.05,y:1.35,r:2.55,type:"read",prompt:STR.pRead,
     get text(){ return Game.signChanged?STR.signTrailheadChanged:STR.signTrailhead; },use(){}});
-  addInteract({x:x+2.2,z:z+0.05,y:1.25,r:2.2,type:"read",prompt:STR.pRead,text:STR.signTrailhead,use(){}});
+  addInteract({x:x+1.25,z:z+0.03,y:1.35,r:2.35,type:"read",prompt:STR.pRead,text:STR.signTrailhead,use(){}});
+  addTrailheadLogPile(x,z);
+  }
   // scenic loop sign for the bad ending — hidden until dawn
   scenicSign=new THREE.Group();
   const p=new THREE.Mesh(new THREE.BoxGeometry(0.1,1.4,0.1),MATS.woodDark);p.position.y=0.7;scenicSign.add(p);
@@ -1622,6 +1658,112 @@ function buildTrailhead(){
   scenicSign.position.set(-1.8,0,7.5); scenicSign.visible=false; scene.add(scenicSign);
   // trailhead return trigger (good ending path)
   Triggers.push({x:0,z:7,r:3.4,cond:()=>Game.phase==="return",fn(){ Endings.good(); }});
+}
+
+function carHullGeometry(width=2.22){
+  const shape=new THREE.Shape();
+  const pts=[
+    [-2.12,0.18],[2.08,0.18],[2.08,0.78],[1.25,0.90],[0.62,1.48],
+    [-0.58,1.55],[-1.12,0.98],[-2.08,0.88]
+  ];
+  shape.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++) shape.lineTo(pts[i][0],pts[i][1]);
+  shape.closePath();
+  const geo=new THREE.ExtrudeGeometry(shape,{depth:width,bevelEnabled:true,bevelThickness:0.055,bevelSize:0.055,bevelSegments:2});
+  const p=geo.attributes.position;
+  for(let i=0;i<p.count;i++){
+    const lx=p.getX(i), ly=p.getY(i), lz=p.getZ(i);
+    p.setXYZ(i,lz-width/2,ly,lx);
+  }
+  p.needsUpdate=true; geo.computeVertexNormals(); return geo;
+}
+function addCarMesh(group,geo,mat,x,y,z,rx=0,ry=0,rz=0){
+  const m=new THREE.Mesh(geo,mat);
+  m.position.set(x,y,z); m.rotation.set(rx,ry,rz); group.add(m); return m;
+}
+function buildAbandonedLeafCar(x,z,ry=-0.08){
+  const car=new THREE.Group();
+  car.position.set(x,0,z); car.rotation.y=ry; scene.add(car);
+
+  addCarMesh(car,carHullGeometry(),MATS.carPaint,0,0,0);
+  addCarMesh(car,new THREE.BoxGeometry(1.92,0.045,1.08),MATS.carPaintDark,0,1.03,-1.43,-0.08,0,0);
+  addCarMesh(car,new THREE.BoxGeometry(1.72,0.055,0.78),MATS.carPaintDark,0,1.02,1.45,0.06,0,0);
+  addCarMesh(car,new THREE.BoxGeometry(1.52,0.06,1.00),MATS.carPaint,0,1.63,0.08,0.03,0,0);
+
+  const glassFront=addCarMesh(car,new THREE.PlaneGeometry(1.42,0.48),MATS.carGlass,0,1.33,-0.78,-0.55,0,0);
+  glassFront.scale.y=0.92;
+  addCarMesh(car,new THREE.PlaneGeometry(1.28,0.42),MATS.carGlass,0,1.30,0.94,0.48,Math.PI,0);
+  for(const side of [-1,1]){
+    const sy=side>0?Math.PI/2:-Math.PI/2;
+    addCarMesh(car,new THREE.PlaneGeometry(0.78,0.43),MATS.carGlass,side*1.13,1.32,-0.30,0,sy,0);
+    addCarMesh(car,new THREE.PlaneGeometry(0.72,0.39),MATS.carGlass,side*1.13,1.28,0.58,0,sy,0);
+    addCarMesh(car,new THREE.PlaneGeometry(1.08,0.62),MATS.carPaintDark,side*1.135,0.78,-0.36,0,sy,0);
+    addCarMesh(car,new THREE.PlaneGeometry(0.94,0.55),MATS.carPaintDark,side*1.135,0.73,0.78,0,sy,0);
+    for(let i=0;i<5;i++){
+      const strip=addCarMesh(car,new THREE.BoxGeometry(0.025,0.025,R(0.48,0.98)),MATS.deadChrome,side*1.16,R(0.72,1.22),R(-1.55,1.45),0,0,R(-0.2,0.2));
+      strip.rotation.y=sy;
+    }
+  }
+
+  const tireGeo=new THREE.CylinderGeometry(0.42,0.42,0.28,18);
+  const hubGeo=new THREE.CylinderGeometry(0.20,0.20,0.305,12);
+  const wheelSpots=[[-1.18,-1.38,0.60],[-1.18,1.37,0.44],[1.18,-1.38,0.54],[1.18,1.37,0.39]];
+  wheelSpots.forEach((w,i)=>{
+    const tire=addCarMesh(car,tireGeo,MATS.rubber,w[0],w[2],w[1],0,0,Math.PI/2);
+    tire.scale.set(i%2?0.66:0.78,1,1.05);
+    addCarMesh(car,hubGeo,i===1?MATS.carRust:MATS.deadChrome,w[0]*1.01,w[2],w[1],0,0,Math.PI/2).scale.set(0.9,0.9,0.9);
+  });
+  addCarMesh(car,new THREE.BoxGeometry(2.12,0.12,0.12),MATS.deadChrome,0,0.56,-2.16,0,0,0.04);
+  addCarMesh(car,new THREE.BoxGeometry(2.02,0.11,0.12),MATS.deadChrome,0,0.54,2.13,0,0,-0.03);
+  addCarMesh(car,new THREE.BoxGeometry(0.24,0.16,0.045),MATS.paper,-0.62,0.76,-2.23,0,0,0);
+  addCarMesh(car,new THREE.BoxGeometry(0.24,0.16,0.045),MATS.paper,0.62,0.76,-2.23,0,0,0);
+  addCarMesh(car,new THREE.BoxGeometry(0.20,0.13,0.045),MATS.markerRed,-0.72,0.70,2.22,0,Math.PI,0);
+  addCarMesh(car,new THREE.BoxGeometry(0.20,0.13,0.045),MATS.markerRed,0.72,0.70,2.22,0,Math.PI,0);
+
+  const rustGeo=new THREE.PlaneGeometry(0.34,0.18);
+  for(let i=0;i<28;i++){
+    const top=rng()<0.36;
+    if(top){
+      const p=addCarMesh(car,rustGeo,MATS.carRust,R(-0.85,0.85),R(1.04,1.62),R(-1.75,1.62),-Math.PI/2+R(-0.12,0.12),0,R(0,6.28));
+      p.scale.set(R(0.55,1.55),R(0.45,1.3),1);
+    } else {
+      const side=rng()<0.5?-1:1, sy=side>0?Math.PI/2:-Math.PI/2;
+      const p=addCarMesh(car,rustGeo,MATS.carRust,side*1.145,R(0.55,1.18),R(-1.82,1.78),0,sy,R(-0.25,0.25));
+      p.scale.set(R(0.65,1.7),R(0.55,1.45),1);
+    }
+  }
+
+  const oil=addCarMesh(car,new THREE.CircleGeometry(1.25,24),MATS.stain.clone(),0,0.018,0.22,-Math.PI/2,0,0);
+  oil.scale.set(1.45,0.72,1); oil.material.opacity=0.52;
+  const leafGeo=new THREE.PlaneGeometry(0.18,0.07);
+  for(let i=0;i<125;i++){
+    const r=rng();
+    let px,py,pz;
+    if(r<0.38){ px=R(-0.75,0.75); py=1.71+R(0,0.035); pz=R(-0.38,0.70); }
+    else if(r<0.70){ px=R(-0.86,0.86); py=1.08+R(0,0.035); pz=R(-1.92,-0.72); }
+    else { px=R(-0.92,0.92); py=1.04+R(0,0.035); pz=R(0.90,1.98); }
+    const leaf=addCarMesh(car,leafGeo,i%2?MATS.leafA:MATS.leafB,px,py,pz,-Math.PI/2+R(-0.16,0.16),0,R(0,6.28));
+    leaf.scale.set(R(0.7,1.9),R(0.8,1.45),1);
+  }
+  const mossGeo=new THREE.PlaneGeometry(0.28,0.12);
+  for(let i=0;i<22;i++){
+    const p=addCarMesh(car,mossGeo,MATS.carMoss,R(-0.92,0.92),R(1.08,1.7),R(-1.72,1.75),-Math.PI/2+R(-0.1,0.1),0,R(0,6.28));
+    p.scale.set(R(0.8,2.2),R(0.7,1.7),1);
+  }
+
+  const bladeA=new THREE.PlaneGeometry(0.16,0.55); bladeA.translate(0,0.275,0);
+  const bladeB=bladeA.clone(); bladeB.rotateY(Math.PI/2);
+  const weedGeo=mergeGeometries([bladeA,bladeB]);
+  for(let i=0;i<54;i++){
+    const edge=rng()<0.68;
+    const px=edge?(rng()<0.5?R(-1.95,-1.18):R(1.18,1.95)):R(-1.18,1.18);
+    const pz=edge?R(-2.12,2.10):(rng()<0.5?R(-2.36,-1.78):R(1.78,2.36));
+    const weed=addCarMesh(car,weedGeo,MATS.weed,px,0.016,pz,0,R(0,6.28),R(-0.12,0.12));
+    const s=R(0.55,1.35); weed.scale.set(s,s*R(0.9,1.65),s);
+  }
+
+  addBoxCol(x,z,3.25,4.95,ry);
+  return car;
 }
 
 // An empty gravel parking lot at the start. The player spawns here in the open,
@@ -1688,6 +1830,7 @@ function buildParkingLot(){
     leaf.scale.set(R(0.7,1.8),R(0.7,1.35),1);
     leaf.position.set(R(-12.4,15.4),0.024,R(6.2,21.9)); scene.add(leaf);
   }
+  buildAbandonedLeafCar(-1.3,14.6,-0.06);
 }
 
 // Pack extra trees and bushes into the four corners of the backdrop box and along
@@ -1864,26 +2007,39 @@ function buildWhiteMarkers(trees){
   }
 }
 function buildRedMarkers(trees){
-  // The markers are knocked loose and lie ON THE GROUND along the trail. You can't
-  // tell where they're meant to go, so you just collect them. Placed at intervals
-  // down the path so collecting them walks you deeper toward the clearing.
-  const zs=[-150,-128,-104,-78,-50,-24];
-  for(const z of zs){
-    const px=pathX(z);
-    const x=px+R(-1.6,1.6);            // scattered near the trail surface
-    const m=makeMarkerPlane(MATS.markerRed);
-    m.position.set(x,0.06,z); m.rotation.x=-Math.PI/2; m.rotation.z=rng()*6.28;
-    m.visible=false; scene.add(m);
-    const it=addInteract({x,z,y:0.3,r:2.2,type:"collect",prompt:STR.pCollect,node:m,active:false,erased:false,
+  // wrong places: back of a tree, too high, on a rock, under the bridge, by the shed, by the entrance
+  const defs=[];
+  const t1=nearestTree(trees,pathX(-150),-150,3,9);            // back of tree (faces away)
+  if(t1) defs.push({mk:()=>{const m=markerOnTree(t1,-300,MATS.markerRed);return m;}});
+  const t2=nearestTree(trees,pathX(-100),-100,3,9);            // too high
+  if(t2) defs.push({mk:()=>markerOnTree(t2,-96,MATS.markerRed,3.1)});
+  defs.push({mk:()=>{                                          // on a rock
+    const z=-62,x=pathX(z)-3.4;
+    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7,0),MATS.rock);
+    rock.position.set(x,0.4,z); scene.add(rock); addCircle(x,z,0.85);
+    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x+0.55,0.62,z); m.rotation.y=Math.PI/2;
+    scene.add(m); return m; }});
+  defs.push({mk:()=>{                                          // under the bridge rail
+    const z=-120,x=pathX(z);
+    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x-1.18,0.45,z+1.4); m.rotation.y=Math.PI/2;
+    scene.add(m); return m; }});
+  defs.push({mk:()=>{                                          // on the shed wall
+    const x=pathX(-92)+6.8-2.0, z=-92+1.66;
+    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x,1.5,z+0.02); m.rotation.y=0; scene.add(m); return m; }});
+  const t6=nearestTree(trees,pathX(-3),-3,2.5,9);              // near the entrance
+  if(t6) defs.push({mk:()=>markerOnTree(t6,1,MATS.markerRed)});
+  for(const d of defs){
+    const m=d.mk(); m.visible=false;
+    const it=addInteract({x:m.position.x,z:m.position.z,y:m.position.y,r:2.4,type:"erase",
+      prompt:STR.pErase,node:m,active:false,erased:false,
       use(){
         it.active=false; it.erased=true;
-        AudioSys.play("brush",0.6,{rate:1.1});
-        Anim.push({t:0,dur:0.4,fn(k){m.position.y=0.06+k*0.6;m.material.opacity=1-k;m.material.transparent=true;},
+        AudioSys.play("brush",0.7,{rate:0.8});
+        Anim.push({t:0,dur:0.9,fn(k){m.material.opacity=1-k;m.material.transparent=true;},
           end(){m.visible=false;}});
-        Game.tasks.erased=redMarkers.filter(r=>r.erased).length;
-        UI.refresh();
+        Game.tasks.erased=redMarkers.filter(r=>r.erased).length+1; // recount below anyway
         setTimeout(()=>{Game.tasks.erased=redMarkers.filter(r=>r.erased).length;UI.refresh();
-          Events.fire("collected");},420);
+          Events.fire("erased");},950);
       }});
     redMarkers.push(it);
   }
@@ -1892,8 +2048,22 @@ function revealRedMarkers(){
   for(const r of redMarkers){ r.node.visible=true; r.node.material.opacity=1; r.active=true; r.erased=false; }
   Game.tasks.erased=0;
 }
-// the unseen restorer is gone — markers are collected, not restored
-
+// the unseen restorer puts one back
+function restoreOneMarker(){
+  const cands=redMarkers.filter(r=>r.erased);
+  if(!cands.length) return false;
+  // farthest from the player — always behind your back
+  let best=null,bd=-1;
+  for(const r of cands){const d=Math.hypot(r.x-Game.player.x,r.z-Game.player.z);if(d>bd){bd=d;best=r;}}
+  best.erased=false; best.active=true; best.node.visible=true;
+  best.node.material.transparent=true; best.node.material.opacity=0;
+  Anim.push({t:0,dur:1.4,fn(k){best.node.material.opacity=k;}});
+  AudioSys.play3D("brush",best.x,best.z,{vol:0.9,range:60,rate:0.9});
+  setTimeout(()=>AudioSys.play3D("hammer",best.x,best.z,{vol:0.7,range:70}),700);
+  Game.tasks.erased=redMarkers.filter(r=>r.erased).length;
+  UI.toast(STR.toastRepaint); UI.refresh(); UI.glitch();
+  return true;
+}
 
 /* ============================ events / triggers / phases ============================ */
 const Triggers=[]; // {x,z,r,once?,cond?,fn,fired?}
@@ -2006,23 +2176,18 @@ const Events={
       case "radioChecked":
         AudioSys.dispatch("continue"); UI.glitch(); UI.refresh(); break;
       case "mapChecked": UI.refresh(); break;
-      case "collected":
+      case "erased":
         if(Game.phase==="erase"){
-          // a shadow flickers between the trees as you gather them
           if(!this.fired.has("fig2") && Game.tasks.erased>=2){ this.fired.add("fig2");
             Glimpse.show(pathX(-80)-6,-80,4500); }
-          if(!this.fired.has("signFlip") && Game.tasks.erased>=3){ this.fired.add("signFlip");
-            Game.signChanged=true;
+        if(!this.fired.has("signFlip") && Game.tasks.erased>=3){ this.fired.add("signFlip");
+          Game.signChanged=true;
+          if(trailheadSign?.material){
             trailheadSign.material.map=TEX.parkMainSign(false);
-            trailheadSign.material.needsUpdate=true; }
-          if(Game.tasks.erased>=Game.tasks.eraseTotal) Phases.toClearing();
+            trailheadSign.material.needsUpdate=true;
+          } }
+          if(Game.tasks.erased>=Game.tasks.eraseTotal) Phases.toReturn();
         }
-        break;
-      case "cabinInspected":
-        if(!this.fired.has("shadows")){ this.fired.add("shadows");
-          setTimeout(()=>{ ShadowWalkers.start(); AudioSys.rustle(Game.player.x+8,Game.player.z+8); }, 900); }
-        UI.glitch();
-        if((Game.tasks.inspected||0) >= clearingCabins.length){ Phases.toLost(); }
         break;
     }
   }
@@ -2063,30 +2228,28 @@ const Phases={
   },
   toErase(){
     Game.phase="erase"; revealRedMarkers();
+    Game.dawnT=Game.dawnTotal;
     AudioSys.dispatch("confirmed",0.6);
     UI.toast(STR.toastRedFound); UI.glitch(); UI.refresh();
-  },
-  toClearing(){
-    Game.phase="clearing"; UI.refresh();
-    AudioSys.creak(pathX(-200),-205);
-    UI.toast(STR.toastClearing);
-    revealClearing();   // shows the abandoned cabins ahead
-  },
-  // after inspecting the last cabin: the concerned radio, then the path is gone
-  toLost(){
-    Game.phase="lost"; UI.refresh();
-    setTimeout(()=>{ AudioSys.dispatchConcerned(); }, 1200);
-    setTimeout(()=>{ UI.toast(STR.toastLost); closeThePath();
-      // once penned in, trying to leave the clearing the way you came ends it
-      Triggers.push({x:pathX(-198),z:-200,r:8,once:true,fn(){ setTimeout(()=>Endings.lost(),1500); }});
-    }, 5200);
+    Restorer.next=performance.now()+26000;
   },
   toReturn(){
     Game.phase="return"; Game.dawnT=-1;
     AudioSys.setWind(0.04,6); AudioSys.setCrickets(0.0,4);
     UI.toast(STR.toastSilence);
-    trailheadSign.visible=false;
+    trailheadSign.visible=false; // the sign is gone
     UI.refresh();
+  }
+};
+const Restorer={
+  next:0,
+  tick(now){
+    if(Game.phase!=="erase") return;
+    if(now>this.next){
+      // never undo the final erase out from under the player unfairly:
+      if(Game.tasks.erased<Game.tasks.eraseTotal) restoreOneMarker();
+      this.next=now+R(28000,40000);
+    }
   }
 };
 const Endings={
@@ -2109,12 +2272,6 @@ const Endings={
       hemi.intensity=lerp(0.55,1.1,k); }});
     AudioSys.murmur();
     setTimeout(()=>UI.fadeOut(()=>UI.ending(STR.endBadTitle,STR.endBadText)),4500);
-  },
-  lost(){
-    if(this.done)return; this.done=true; Game.state="ended";
-    AudioSys.setWind(0.5,3); ShadowWalkers.stop();
-    AudioSys.staticBurst(0.5,2.0);
-    UI.fadeOut(()=>UI.ending(STR.endLostTitle,STR.endLostText));
   }
 };
 
@@ -2133,65 +2290,19 @@ const UI={
       obj=STR.objOutpost;
       rows.push(tk(STR.taskMap,t.map)); rows.push(tk(STR.taskRadio,t.radio));
     } else if(Game.phase==="erase"){
-      obj=STR.objCollect;
-      rows.push(tk(`${STR.taskCollect} (${t.erased}/${t.eraseTotal})`,t.erased>=t.eraseTotal));
-    } else if(Game.phase==="clearing"){
-      obj=STR.objClearing;
-      rows.push(tk(`${STR.taskInspect} (${t.inspected||0}/${clearingCabins.length})`,(t.inspected||0)>=clearingCabins.length));
-    } else if(Game.phase==="lost"){
-      obj=STR.objLost;
+      obj=STR.objErase;
+      rows.push(tk(`${STR.taskErase} (${t.erased}/${t.eraseTotal})`,false));
     } else if(Game.phase==="return"){
       obj=STR.objReturn;
     }
     $("checklist").innerHTML=`<div class="obj">${obj}</div>`+rows.join("");
-    $("counter").textContent = "";
-    $("dawn").style.opacity = 0;
+    $("counter").textContent = Game.phase==="erase" ? STR.counterErase(Game.tasks.eraseTotal-Game.tasks.erased,Game.tasks.eraseTotal) : "";
+    $("dawn").style.opacity = Game.phase==="erase" ? 0.9 : 0;
+    $("dawn").textContent = STR.counterDawn;
   },
   prompt(txt){ const p=$("prompt"); p.textContent=txt||""; p.style.opacity=txt?1:0; },
   toast(txt){ if(!txt)return; const e=$("toast"); e.textContent=txt; e.style.opacity=1;
     clearTimeout(this._tt); this._tt=setTimeout(()=>e.style.opacity=0,3500); },
-  showMinimap(){ $("minimap").style.display="block"; this._mmReady=true; },
-  drawMinimap(){
-    if(!this._mmReady) return;
-    const cv=$("minimapcv"); if(!cv) return;
-    const ctx=cv.getContext("2d"), W=cv.width, H=cv.height;
-    // compute path bounds once
-    if(!this._mmB){
-      let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
-      for(const p of pathSamples){ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);minz=Math.min(minz,p.z);maxz=Math.max(maxz,p.z); }
-      const padX=10, padZ=8;
-      this._mmB={minx:minx-padX,maxx:maxx+padX,minz:minz-padZ,maxz:maxz+padZ};
-    }
-    const b=this._mmB, pad=14;
-    const sx=v=>pad+((v-b.minx)/(b.maxx-b.minx))*(W-2*pad);
-    // z grows negative down-trail; map far end (-198) to bottom, start (+20) to top
-    const sz=v=>pad+((b.maxz-v)/(b.maxz-b.minz))*(H-2*pad);
-    ctx.clearRect(0,0,W,H);
-    // aged paper background
-    ctx.fillStyle="#d8cba6"; ctx.fillRect(0,0,W,H);
-    ctx.fillStyle="rgba(120,100,60,0.10)";
-    for(let i=0;i<40;i++){ const rx=Math.random()*W,ry=Math.random()*H; ctx.fillRect(rx,ry,2,2); }
-    // trail line
-    ctx.strokeStyle="#5a4a2c"; ctx.lineWidth=2.4; ctx.lineJoin="round"; ctx.beginPath();
-    pathSamples.forEach((p,i)=>{ const X=sx(p.x),Y=sz(p.z); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
-    ctx.stroke();
-    // dashed casing
-    ctx.strokeStyle="rgba(90,74,44,0.4)"; ctx.lineWidth=5; ctx.stroke();
-    // landmarks
-    const mark=(wx,wz,label,col)=>{ const X=sx(wx),Y=sz(wz);
-      ctx.fillStyle=col; ctx.fillRect(X-2.5,Y-2.5,5,5);
-      ctx.fillStyle="#3a2e1a"; ctx.font="8px 'Courier New',monospace"; ctx.fillText(label,X+5,Y+3); };
-    mark(1.6,14,"LOT","#6b5a36");
-    mark(pathX(-92)+6.8,-92,"SHED","#6b5a36");
-    mark(pathX(-168)-7.5,-168,"OUTPOST","#6b5a36");
-    mark(0,-120,"BRIDGE","#6b5a36");
-    // player position + facing
-    const p=Game.player, PX=sx(p.x), PY=sz(p.z);
-    ctx.save(); ctx.translate(PX,PY); ctx.rotate(-p.yaw);
-    ctx.fillStyle="#b23030"; ctx.beginPath();
-    ctx.moveTo(0,-6); ctx.lineTo(4,5); ctx.lineTo(0,2); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill();
-    ctx.restore();
-  },
   radioLine(txt){ const e=$("radioline"); e.textContent=txt; e.style.opacity=0.95;
     clearTimeout(this._rt); this._rt=setTimeout(()=>e.style.opacity=0,3000); },
   read(text){
@@ -2249,8 +2360,7 @@ function resolveCollisions(){
   // soft world bounds — the brush closes in around the corridor
   const px=pathX(p.z);
   p.x=clamp(p.x,px-34,px+34);
-  const zMin = (Game.phase==="clearing"||Game.phase==="lost") ? -244 : -200;
-  p.z=clamp(p.z,zMin,21);
+  p.z=clamp(p.z,-200,21);
 }
 let bestInteract=null;
 function branchPrompt(it){
@@ -2347,8 +2457,8 @@ function update(dt){
   for(let i=Anim.length-1;i>=0;i--){const a=Anim[i];a.t+=dt;const k=Math.min(a.t/a.dur,1);
     a.fn(k); if(k>=1){a.end&&a.end();Anim.splice(i,1);} }
   Glimpse.tick();
+  Restorer.tick(performance.now());
   Rain.tick(dt);
-  ShadowWalkers.tick(dt);
   // dawn pressure
   if(Game.dawnT>0){
     Game.dawnT-=dt;
@@ -2367,7 +2477,6 @@ function update(dt){
 function render(){
   const p=Game.player;
   if(skyDome) skyDome.position.set(p.x,0,p.z);
-  if(Game.hasMap) UI.drawMinimap();
   const bobY=Math.sin(p.bob)*0.045, bobX=Math.cos(p.bob*0.5)*0.02;
   camera.position.set(p.x+bobX,p.y+bobY,p.z);
   camera.rotation.order="YXZ";
@@ -2392,6 +2501,7 @@ async function boot(){
   await loadBuildingMeshes();
   await loadBushMesh();
   await loadLogMesh();
+  await loadParkSignMesh();
   const trees=buildTrees();
   buildBushes();
   buildGrass();
@@ -2399,7 +2509,6 @@ async function boot(){
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
   buildBranches(); buildWhiteMarkers(trees); buildRedMarkers(trees);
-  buildAbandonedClearing(); ShadowWalkers.build();
   UI.refresh(); UI.clock();
   $("beginbtn").textContent=STR.begin;
   Game.state="start";

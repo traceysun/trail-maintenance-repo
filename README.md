@@ -1,9 +1,7 @@
-# Trail Maintenance
+# Trail Maintenance — source
 
-> A first-person atmospheric horror walking sim.
-
-Built with Three.js (vanilla ES modules, no build step). PS1/VHS-leaning but with
-generated high-fidelity meshes and PBR ground.
+A first-person atmospheric horror walking sim built with Three.js (vanilla ES modules,
+no build step). PS1/VHS-leaning but with generated high-fidelity meshes and PBR ground.
 
 ## Run locally
 It's static files, but ES-module imports and texture/GLB loading need a real HTTP
