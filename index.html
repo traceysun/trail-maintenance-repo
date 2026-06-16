@@ -35,6 +35,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"C
 #prompt{left:50%;bottom:22%;transform:translateX(-50%);font-size:15px;letter-spacing:1px;opacity:0;transition:opacity .15s}
 #toast{left:50%;top:30%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;opacity:0;transition:opacity .8s;font-style:italic}
 #radioline{left:50%;bottom:14%;transform:translateX(-50%);font-size:14px;letter-spacing:3px;opacity:0;color:#cfd6c8}
+#minimap{position:absolute;left:16px;bottom:16px;z-index:9;padding:8px 8px 4px;background:rgba(28,26,18,0.82);border:1px solid #5a5238;border-radius:3px;box-shadow:0 4px 14px rgba(0,0,0,0.5);filter:saturate(0.7) brightness(0.95)}
+#minimapcv{display:block;image-rendering:auto}
+#minimaplabel{font-family:'Courier New',monospace;font-size:10px;letter-spacing:3px;color:#c9bd97;text-align:center;margin-top:3px;opacity:0.85}
 #dot{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1px;background:rgba(216,203,168,.7);z-index:10;border-radius:50%}
 /* ---------- reading overlay ---------- */
 #read{position:fixed;inset:0;z-index:20;display:none;background:rgba(4,6,7,.78);backdrop-filter:blur(1px)}
@@ -91,6 +94,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"C
 <div class="hud" id="prompt"></div>
 <div class="hud" id="toast"></div>
 <div class="hud" id="radioline"></div>
+<div id="minimap" style="display:none"><canvas id="minimapcv" width="200" height="260"></canvas><div id="minimaplabel">TRAIL 6</div></div>
 <div id="dot"></div>
 <div id="read"><div id="readpaper"></div><div id="readclose"></div></div>
 <div id="fade"></div>

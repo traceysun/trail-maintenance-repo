@@ -144,6 +144,7 @@ const AudioSys = {
     const g=c.createGain(); g.gain.value=vol;
     let node=s;
     if(opts.radio){ node=this._radioChain(s); }
+    else if(opts.garble){ node=this._garbleChain(s); }
     node.connect(g); g.connect(this.master);
     s.start(c.currentTime, opts.offset||0, opts.dur);
     return s;
@@ -156,6 +157,24 @@ const AudioSys = {
     for(let i=0;i<256;i++){const x=i/128-1;curve[i]=Math.tanh(x*3);}
     ws.curve=curve;
     src.connect(bp); bp.connect(ws);
+    return ws;
+  },
+  // garbled radio: the voice is there but words can't be made out — a wobbling
+  // narrow bandpass + ring-modulation tremolo + hard distortion smear it.
+  _garbleChain(src){
+    const c=this.ctx, now=c.currentTime;
+    const bp=c.createBiquadFilter(); bp.type="bandpass"; bp.frequency.value=1100; bp.Q.value=6;
+    const lfo=c.createOscillator(); lfo.type="sine"; lfo.frequency.value=7.5;
+    const lfoG=c.createGain(); lfoG.gain.value=650;
+    lfo.connect(lfoG); lfoG.connect(bp.frequency); lfo.start(now);
+    const ring=c.createGain(); ring.gain.value=0.5;
+    const ros=c.createOscillator(); ros.type="square"; ros.frequency.value=22;
+    const rg=c.createGain(); rg.gain.value=0.5;
+    ros.connect(rg); rg.connect(ring.gain); ros.start(now);
+    const ws=c.createWaveShaper(); const curve=new Float32Array(256);
+    for(let i=0;i<256;i++){const x=i/128-1;curve[i]=Math.tanh(x*7);}
+    ws.curve=curve;
+    src.connect(bp); bp.connect(ring); ring.connect(ws);
     return ws;
   },
   // little procedural sounds
@@ -217,13 +236,25 @@ const AudioSys = {
       s.connect(g);g.connect(this.master);s.start(); }
   },
   dispatch(which, after=0.8){
-    // static lead-in, voice through the radio chain, static tail
+    // static lead-in, then a garbled transmission you can't make out, static tail
     this.staticBurst(0.4,1.1);
-    setTimeout(()=>{ this.play(which==="continue"?"vo1":"vo2",0.9,{radio:true});
-      const txt = which==="continue"?STR.radioContinue:STR.radioConfirmed;
-      UI.radioLine(txt);
+    setTimeout(()=>{ this.play(which==="continue"?"vo1":"vo2",0.95,{garble:true});
+      UI.radioLine(STR.radioGarbled);
       setTimeout(()=>this.staticBurst(0.3,0.9), 1600);
     }, after*1000);
+  },
+  // the concerned transmission at the clearing — clearer than the dispatch lines,
+  // a real voice that has noticed where you are. Text surfaces on-screen.
+  dispatchConcerned(){
+    this.staticBurst(0.5,1.3);
+    setTimeout(()=>{
+      // reuse a voice clip but cleaner (radio chain, not garble) so a human reads through
+      this.play("vo1",1.0,{radio:true});
+      UI.radioLine(STR.radioConcerned1);
+      UI.glitch();
+    }, 1300);
+    setTimeout(()=>{ this.play("vo2",1.0,{radio:true}); UI.radioLine(STR.radioConcerned2); }, 4200);
+    setTimeout(()=>this.staticBurst(0.4,1.4), 6800);
   },
   footstep(){
     if(!this.buffers.steps){ // procedural thud fallback
@@ -564,9 +595,10 @@ const Game = {
   state:"boot", // boot → start → play → reading → ended
   player:{x:1.6,y:1.62,z:18,yaw:Math.PI,pitch:0,vx:0,vz:0,bob:0,stepAcc:0},
   flashOn:false,
+  hasMap:false,
   phase:"intro",
   tasks:{branches:0,branchesTotal:3,markers:0,markersTotal:3,shedSign:false,map:false,radio:false,
-         erased:0,eraseTotal:6},
+         erased:0,eraseTotal:6,inspected:0},
   dawnT:-1, dawnTotal:240, timecode:19.7*3600, // 7:42 PM
   ended:false,
 };
@@ -761,7 +793,11 @@ async function loadTreeMesh(){
 // ---- building meshes (GLB) ----
 const BUILDING_GLB={};
 async function loadBuildingMeshes(){
-  const files={shed:"shed.glb", outpost:"outpost.glb", cabin:"cabin.glb", signpost:"signpost.glb"};
+  const files={shed:"shed.glb", outpost:"outpost.glb", cabin:"cabin.glb", signpost:"signpost.glb",
+    // bespoke abandoned cabins — generate these in Codex and drop the .glb files in;
+    // they load automatically. Until then the clearing reuses cabin/shed meshes.
+    cabin_abandoned_1:"cabin_abandoned_1.glb", cabin_abandoned_2:"cabin_abandoned_2.glb",
+    cabin_abandoned_3:"cabin_abandoned_3.glb", cabin_abandoned_4:"cabin_abandoned_4.glb"};
   const loader=new GLTFLoader();
   for(const [name,fn] of Object.entries(files)){
     try{
@@ -1295,9 +1331,21 @@ function buildOutpost(){
            else UI.read(STR.noteRadioDead); }});
   plane(0.3,0.4,MATS.paper,x-1.3,1.0,z-1.1,0.2,-Math.PI/2+0.06);
   addInteract({x:x-1.3,z:z-1.1,y:1.0,r:1.6,type:"read",prompt:STR.pRead,text:STR.noteDesk,use(){}});
+  // a folded PARK MAP on the desk — pick it up and it becomes a live minimap in
+  // the bottom-left that you follow.
+  const mapProp=plane(0.34,0.26,MATS.paper,x-0.6,1.0,z-1.15,0.12,-0.3);
+  const mapInt=addInteract({x:x-0.6,z:z-1.15,y:1.0,r:1.7,type:"map",prompt:STR.pTakeMap,
+    use(){
+      if(Game.hasMap) return;
+      Game.hasMap=true;
+      mapProp.visible=false; mapInt.active=false;
+      Game.tasks.map=true; Events.fire("mapChecked");
+      UI.showMinimap();
+      UI.toast(STR.toastMapTaken);
+    }});
   plane(1.5,1.1,new THREE.MeshLambertMaterial({map:TEX.wallMap()}),x-W/2+0.1,1.7,z+0.6,Math.PI/2);
   addInteract({x:x-W/2+0.5,z:z+0.6,y:1.7,r:2.0,type:"read",prompt:STR.pRead,text:STR.noteWallMap,
-    use(){ Game.tasks.map=true; Events.fire("mapChecked"); }});
+    use(){}});
   plane(1.1,0.8,new THREE.MeshLambertMaterial({map:TEX.sign("TRAIL ADVISORIES\n\n[      ]   [      ]\n\n[  6  — missing  ]",{w:220,h:160,size:12,top:30,lh:24})}),
     x+1.4,1.7,z-D/2+0.09,0);
   addInteract({x:x+1.4,z:z-D/2+0.5,y:1.7,r:1.8,type:"read",prompt:STR.pRead,text:STR.noteMissing,use(){}});
@@ -1401,6 +1449,150 @@ function buildCabin(){ // distant boarded cabin — set dressing
   } else {
     box(3.4,2.3,2.8,MATS.planksDark,x,1.35,z,0.4,true,true); // invisible collider
   }
+}
+
+// ============================================================================
+// THE ABANDONED CLEARING — revealed after all markers are collected. A cluster of
+// long-abandoned cabins past the end of the trail. Inspecting each reveals how
+// long they've been empty; the last one triggers the concerned radio + lost path.
+// ============================================================================
+let clearingGroup=null;
+const clearingCabins=[];
+function buildAbandonedClearing(){
+  clearingGroup=new THREE.Group(); clearingGroup.visible=false; scene.add(clearingGroup);
+  // clearing centered past the trail end
+  const cz=-228, cx=pathX(-198);
+  // prefer bespoke abandoned cabins; fall back to existing cabin/outpost/shed meshes
+  const pick=(i)=>{
+    const bespoke=["cabin_abandoned_1","cabin_abandoned_2","cabin_abandoned_3","cabin_abandoned_4"][i];
+    if(BUILDING_GLB[bespoke]) return bespoke;
+    return ["cabin","outpost","shed","cabin"][i];
+  };
+  const spots=[
+    {x:cx-12,z:cz+6, ry:0.6},
+    {x:cx+11,z:cz+2, ry:-0.7},
+    {x:cx-7, z:cz-12,ry:2.4},
+    {x:cx+9, z:cz-14,ry:-2.1},
+  ];
+  spots.forEach((s,i)=>{
+    const name=pick(i);
+    const b=BUILDING_GLB[name];
+    if(b){
+      const g=b.root.clone(true);
+      const k=4.6/(b.dims.w||1); g.scale.setScalar(k);
+      g.rotation.y=s.ry; g.updateWorldMatrix(true,true);
+      const bb=new THREE.Box3().setFromObject(g);
+      g.position.set(s.x,-bb.min.y,s.z);
+      clearingGroup.add(g);
+    } else {
+      // procedural derelict fallback
+      const m=new THREE.Mesh(new THREE.BoxGeometry(3.6,2.4,3.0),MATS.planksDark);
+      m.position.set(s.x,1.2,s.z); m.rotation.y=s.ry; clearingGroup.add(m);
+    }
+    addBoxCol(s.x,s.z,4.2,4.2,s.ry);
+    // inspect interactable in front of each cabin door
+    const ix=s.x+Math.sin(s.ry+Math.PI)*2.6, iz=s.z+Math.cos(s.ry+Math.PI)*2.6;
+    const it=addInteract({x:ix,z:iz,y:1.2,r:2.6,type:"inspect",prompt:STR.pInspect,active:false,
+      text:STR["cabinNote"+(i+1)],
+      use(){
+        if(it.done) return; it.done=true;
+        it.active=false;
+        Game.tasks.inspected=(Game.tasks.inspected||0)+1;
+        AudioSys.creak(ix,iz);
+        UI.refresh();
+        Events.fire("cabinInspected");
+      }});
+    clearingCabins.push(it);
+  });
+  // a few dead trees + a cold fire ring to dress the clearing
+  for(let i=0;i<5;i++){
+    const a=rng()*6.28, rr=R(14,22);
+    box(0.3,R(3,5),0.3,MATS.woodDark, cx+Math.cos(a)*rr, 2, cz+Math.sin(a)*rr, rng());
+  }
+}
+function revealClearing(){
+  if(clearingGroup) clearingGroup.visible=true;
+  for(const it of clearingCabins) it.active=true;
+}
+
+// ============================================================================
+// SHADOW WALKERS — black humanoid silhouettes that walk between the trees behind
+// the player while inspecting the cabins. Never approach; just drift across,
+// half-seen between trunks.
+// ============================================================================
+const ShadowWalkers={
+  list:[], active:false,
+  build(){
+    for(let i=0;i<5;i++){
+      const g=new THREE.Group();
+      const torso=new THREE.Mesh(new THREE.CapsuleGeometry?new THREE.CylinderGeometry(0.16,0.2,1.0,7):new THREE.CylinderGeometry(0.16,0.2,1.0,7),MATS.dark);
+      torso.position.y=1.05; g.add(torso);
+      const head=new THREE.Mesh(new THREE.SphereGeometry(0.16,8,6),MATS.dark); head.position.y=1.7; g.add(head);
+      const la=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.8,5),MATS.dark); la.position.set(-0.14,0.45,0); g.add(la);
+      const ra=la.clone(); ra.position.x=0.14; g.add(ra);
+      g.visible=false; g.userData={phase:rng()*6.28,speed:R(0.5,0.9),baseX:0,baseZ:0,dir:1};
+      scene.add(g); this.list.push(g);
+    }
+  },
+  start(){
+    if(this.active) return; this.active=true;
+    const p=Game.player;
+    this.list.forEach((g,i)=>{
+      // place them in a ring behind/around the clearing, among the trees
+      const a=Math.PI*0.5 + (i/this.list.length)*Math.PI*1.0 + R(-0.3,0.3);
+      const r=R(16,26);
+      g.userData.baseX=p.x+Math.cos(a)*r;
+      g.userData.baseZ=p.z+Math.sin(a)*r;
+      g.userData.dir=rng()<0.5?1:-1;
+      g.position.set(g.userData.baseX,0,g.userData.baseZ);
+      g.visible=true;
+    });
+    AudioSys.creak(p.x+10,p.z+10);
+  },
+  stop(){ this.active=false; for(const g of this.list) g.visible=false; },
+  tick(dt){
+    if(!this.active) return;
+    const t=performance.now()*0.001;
+    for(const g of this.list){
+      const u=g.userData;
+      // drift sideways between trees, bobbing slightly; face travel direction
+      u.baseX += Math.cos(u.phase)*u.speed*u.dir*dt*1.4;
+      u.baseZ += Math.sin(u.phase)*u.speed*u.dir*dt*1.4;
+      g.position.x=u.baseX; g.position.z=u.baseZ;
+      g.position.y=Math.sin(t*4+u.phase)*0.03;
+      g.rotation.y=Math.atan2(Math.cos(u.phase)*u.dir,Math.sin(u.phase)*u.dir);
+      // keep them at a distance — if they wander too close, push them out
+      const d=Math.hypot(g.position.x-Game.player.x,g.position.z-Game.player.z);
+      if(d<11){ u.dir*=-1; }
+    }
+  }
+};
+
+// Close the original path: fill the trail behind the player with trees so they
+// can't retrace their steps back to the car.
+let pathClosed=false;
+function closeThePath(){
+  if(pathClosed||!TREE_GLBS.length) return; pathClosed=true;
+  const M=new THREE.Matrix4(),Q=new THREE.Quaternion(),S=new THREE.Vector3(),P=new THREE.Vector3();
+  const buckets=TREE_GLBS.map(()=>[]);
+  // pack trees densely right across and along the whole trail corridor
+  for(let z=12; z>=-204; z-=2.0){
+    const px=pathX(z);
+    for(let off=-6; off<=6; off+=2.2){
+      buckets[Math.floor(rng()*TREE_GLBS.length)].push({x:px+off+R(-0.8,0.8), z:z+R(-0.8,0.8), s:R(0.9,1.5), rot:rng()*6.28});
+    }
+  }
+  const TARGET_H=7.0;
+  TREE_GLBS.forEach((glb,vi)=>{
+    const mine=buckets[vi]; if(!mine.length) return;
+    const k=TARGET_H/(glb.unitH||1);
+    const inst=new THREE.InstancedMesh(glb.geometry,glb.material,mine.length);
+    mine.forEach((tr,i)=>{ P.set(tr.x,0,tr.z);Q.setFromEuler(new THREE.Euler(0,tr.rot,0));const sc=k*tr.s;S.set(sc,sc,sc);M.compose(P,Q,S);inst.setMatrixAt(i,M);
+      addCircle(tr.x,tr.z,0.6); });
+    inst.instanceMatrix.needsUpdate=true; scene.add(inst);
+  });
+  // also lift the soft z-bound so the player is now penned in the clearing
+  Game.penned=true;
 }
 function buildTrailhead(){
   const x=pathX(8.5),z=8.5;
@@ -1672,39 +1864,26 @@ function buildWhiteMarkers(trees){
   }
 }
 function buildRedMarkers(trees){
-  // wrong places: back of a tree, too high, on a rock, under the bridge, by the shed, by the entrance
-  const defs=[];
-  const t1=nearestTree(trees,pathX(-150),-150,3,9);            // back of tree (faces away)
-  if(t1) defs.push({mk:()=>{const m=markerOnTree(t1,-300,MATS.markerRed);return m;}});
-  const t2=nearestTree(trees,pathX(-100),-100,3,9);            // too high
-  if(t2) defs.push({mk:()=>markerOnTree(t2,-96,MATS.markerRed,3.1)});
-  defs.push({mk:()=>{                                          // on a rock
-    const z=-62,x=pathX(z)-3.4;
-    const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(0.7,0),MATS.rock);
-    rock.position.set(x,0.4,z); scene.add(rock); addCircle(x,z,0.85);
-    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x+0.55,0.62,z); m.rotation.y=Math.PI/2;
-    scene.add(m); return m; }});
-  defs.push({mk:()=>{                                          // under the bridge rail
-    const z=-120,x=pathX(z);
-    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x-1.18,0.45,z+1.4); m.rotation.y=Math.PI/2;
-    scene.add(m); return m; }});
-  defs.push({mk:()=>{                                          // on the shed wall
-    const x=pathX(-92)+6.8-2.0, z=-92+1.66;
-    const m=makeMarkerPlane(MATS.markerRed); m.position.set(x,1.5,z+0.02); m.rotation.y=0; scene.add(m); return m; }});
-  const t6=nearestTree(trees,pathX(-3),-3,2.5,9);              // near the entrance
-  if(t6) defs.push({mk:()=>markerOnTree(t6,1,MATS.markerRed)});
-  for(const d of defs){
-    const m=d.mk(); m.visible=false;
-    const it=addInteract({x:m.position.x,z:m.position.z,y:m.position.y,r:2.4,type:"erase",
-      prompt:STR.pErase,node:m,active:false,erased:false,
+  // The markers are knocked loose and lie ON THE GROUND along the trail. You can't
+  // tell where they're meant to go, so you just collect them. Placed at intervals
+  // down the path so collecting them walks you deeper toward the clearing.
+  const zs=[-150,-128,-104,-78,-50,-24];
+  for(const z of zs){
+    const px=pathX(z);
+    const x=px+R(-1.6,1.6);            // scattered near the trail surface
+    const m=makeMarkerPlane(MATS.markerRed);
+    m.position.set(x,0.06,z); m.rotation.x=-Math.PI/2; m.rotation.z=rng()*6.28;
+    m.visible=false; scene.add(m);
+    const it=addInteract({x,z,y:0.3,r:2.2,type:"collect",prompt:STR.pCollect,node:m,active:false,erased:false,
       use(){
         it.active=false; it.erased=true;
-        AudioSys.play("brush",0.7,{rate:0.8});
-        Anim.push({t:0,dur:0.9,fn(k){m.material.opacity=1-k;m.material.transparent=true;},
+        AudioSys.play("brush",0.6,{rate:1.1});
+        Anim.push({t:0,dur:0.4,fn(k){m.position.y=0.06+k*0.6;m.material.opacity=1-k;m.material.transparent=true;},
           end(){m.visible=false;}});
-        Game.tasks.erased=redMarkers.filter(r=>r.erased).length+1; // recount below anyway
+        Game.tasks.erased=redMarkers.filter(r=>r.erased).length;
+        UI.refresh();
         setTimeout(()=>{Game.tasks.erased=redMarkers.filter(r=>r.erased).length;UI.refresh();
-          Events.fire("erased");},950);
+          Events.fire("collected");},420);
       }});
     redMarkers.push(it);
   }
@@ -1713,22 +1892,8 @@ function revealRedMarkers(){
   for(const r of redMarkers){ r.node.visible=true; r.node.material.opacity=1; r.active=true; r.erased=false; }
   Game.tasks.erased=0;
 }
-// the unseen restorer puts one back
-function restoreOneMarker(){
-  const cands=redMarkers.filter(r=>r.erased);
-  if(!cands.length) return false;
-  // farthest from the player — always behind your back
-  let best=null,bd=-1;
-  for(const r of cands){const d=Math.hypot(r.x-Game.player.x,r.z-Game.player.z);if(d>bd){bd=d;best=r;}}
-  best.erased=false; best.active=true; best.node.visible=true;
-  best.node.material.transparent=true; best.node.material.opacity=0;
-  Anim.push({t:0,dur:1.4,fn(k){best.node.material.opacity=k;}});
-  AudioSys.play3D("brush",best.x,best.z,{vol:0.9,range:60,rate:0.9});
-  setTimeout(()=>AudioSys.play3D("hammer",best.x,best.z,{vol:0.7,range:70}),700);
-  Game.tasks.erased=redMarkers.filter(r=>r.erased).length;
-  UI.toast(STR.toastRepaint); UI.refresh(); UI.glitch();
-  return true;
-}
+// the unseen restorer is gone — markers are collected, not restored
+
 
 /* ============================ events / triggers / phases ============================ */
 const Triggers=[]; // {x,z,r,once?,cond?,fn,fired?}
@@ -1841,16 +2006,23 @@ const Events={
       case "radioChecked":
         AudioSys.dispatch("continue"); UI.glitch(); UI.refresh(); break;
       case "mapChecked": UI.refresh(); break;
-      case "erased":
+      case "collected":
         if(Game.phase==="erase"){
+          // a shadow flickers between the trees as you gather them
           if(!this.fired.has("fig2") && Game.tasks.erased>=2){ this.fired.add("fig2");
             Glimpse.show(pathX(-80)-6,-80,4500); }
           if(!this.fired.has("signFlip") && Game.tasks.erased>=3){ this.fired.add("signFlip");
             Game.signChanged=true;
             trailheadSign.material.map=TEX.parkMainSign(false);
             trailheadSign.material.needsUpdate=true; }
-          if(Game.tasks.erased>=Game.tasks.eraseTotal) Phases.toReturn();
+          if(Game.tasks.erased>=Game.tasks.eraseTotal) Phases.toClearing();
         }
+        break;
+      case "cabinInspected":
+        if(!this.fired.has("shadows")){ this.fired.add("shadows");
+          setTimeout(()=>{ ShadowWalkers.start(); AudioSys.rustle(Game.player.x+8,Game.player.z+8); }, 900); }
+        UI.glitch();
+        if((Game.tasks.inspected||0) >= clearingCabins.length){ Phases.toLost(); }
         break;
     }
   }
@@ -1891,28 +2063,30 @@ const Phases={
   },
   toErase(){
     Game.phase="erase"; revealRedMarkers();
-    Game.dawnT=Game.dawnTotal;
     AudioSys.dispatch("confirmed",0.6);
     UI.toast(STR.toastRedFound); UI.glitch(); UI.refresh();
-    Restorer.next=performance.now()+26000;
+  },
+  toClearing(){
+    Game.phase="clearing"; UI.refresh();
+    AudioSys.creak(pathX(-200),-205);
+    UI.toast(STR.toastClearing);
+    revealClearing();   // shows the abandoned cabins ahead
+  },
+  // after inspecting the last cabin: the concerned radio, then the path is gone
+  toLost(){
+    Game.phase="lost"; UI.refresh();
+    setTimeout(()=>{ AudioSys.dispatchConcerned(); }, 1200);
+    setTimeout(()=>{ UI.toast(STR.toastLost); closeThePath();
+      // once penned in, trying to leave the clearing the way you came ends it
+      Triggers.push({x:pathX(-198),z:-200,r:8,once:true,fn(){ setTimeout(()=>Endings.lost(),1500); }});
+    }, 5200);
   },
   toReturn(){
     Game.phase="return"; Game.dawnT=-1;
     AudioSys.setWind(0.04,6); AudioSys.setCrickets(0.0,4);
     UI.toast(STR.toastSilence);
-    trailheadSign.visible=false; // the sign is gone
+    trailheadSign.visible=false;
     UI.refresh();
-  }
-};
-const Restorer={
-  next:0,
-  tick(now){
-    if(Game.phase!=="erase") return;
-    if(now>this.next){
-      // never undo the final erase out from under the player unfairly:
-      if(Game.tasks.erased<Game.tasks.eraseTotal) restoreOneMarker();
-      this.next=now+R(28000,40000);
-    }
   }
 };
 const Endings={
@@ -1935,6 +2109,12 @@ const Endings={
       hemi.intensity=lerp(0.55,1.1,k); }});
     AudioSys.murmur();
     setTimeout(()=>UI.fadeOut(()=>UI.ending(STR.endBadTitle,STR.endBadText)),4500);
+  },
+  lost(){
+    if(this.done)return; this.done=true; Game.state="ended";
+    AudioSys.setWind(0.5,3); ShadowWalkers.stop();
+    AudioSys.staticBurst(0.5,2.0);
+    UI.fadeOut(()=>UI.ending(STR.endLostTitle,STR.endLostText));
   }
 };
 
@@ -1953,19 +2133,65 @@ const UI={
       obj=STR.objOutpost;
       rows.push(tk(STR.taskMap,t.map)); rows.push(tk(STR.taskRadio,t.radio));
     } else if(Game.phase==="erase"){
-      obj=STR.objErase;
-      rows.push(tk(`${STR.taskErase} (${t.erased}/${t.eraseTotal})`,false));
+      obj=STR.objCollect;
+      rows.push(tk(`${STR.taskCollect} (${t.erased}/${t.eraseTotal})`,t.erased>=t.eraseTotal));
+    } else if(Game.phase==="clearing"){
+      obj=STR.objClearing;
+      rows.push(tk(`${STR.taskInspect} (${t.inspected||0}/${clearingCabins.length})`,(t.inspected||0)>=clearingCabins.length));
+    } else if(Game.phase==="lost"){
+      obj=STR.objLost;
     } else if(Game.phase==="return"){
       obj=STR.objReturn;
     }
     $("checklist").innerHTML=`<div class="obj">${obj}</div>`+rows.join("");
-    $("counter").textContent = Game.phase==="erase" ? STR.counterErase(Game.tasks.eraseTotal-Game.tasks.erased,Game.tasks.eraseTotal) : "";
-    $("dawn").style.opacity = Game.phase==="erase" ? 0.9 : 0;
-    $("dawn").textContent = STR.counterDawn;
+    $("counter").textContent = "";
+    $("dawn").style.opacity = 0;
   },
   prompt(txt){ const p=$("prompt"); p.textContent=txt||""; p.style.opacity=txt?1:0; },
   toast(txt){ if(!txt)return; const e=$("toast"); e.textContent=txt; e.style.opacity=1;
     clearTimeout(this._tt); this._tt=setTimeout(()=>e.style.opacity=0,3500); },
+  showMinimap(){ $("minimap").style.display="block"; this._mmReady=true; },
+  drawMinimap(){
+    if(!this._mmReady) return;
+    const cv=$("minimapcv"); if(!cv) return;
+    const ctx=cv.getContext("2d"), W=cv.width, H=cv.height;
+    // compute path bounds once
+    if(!this._mmB){
+      let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+      for(const p of pathSamples){ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);minz=Math.min(minz,p.z);maxz=Math.max(maxz,p.z); }
+      const padX=10, padZ=8;
+      this._mmB={minx:minx-padX,maxx:maxx+padX,minz:minz-padZ,maxz:maxz+padZ};
+    }
+    const b=this._mmB, pad=14;
+    const sx=v=>pad+((v-b.minx)/(b.maxx-b.minx))*(W-2*pad);
+    // z grows negative down-trail; map far end (-198) to bottom, start (+20) to top
+    const sz=v=>pad+((b.maxz-v)/(b.maxz-b.minz))*(H-2*pad);
+    ctx.clearRect(0,0,W,H);
+    // aged paper background
+    ctx.fillStyle="#d8cba6"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="rgba(120,100,60,0.10)";
+    for(let i=0;i<40;i++){ const rx=Math.random()*W,ry=Math.random()*H; ctx.fillRect(rx,ry,2,2); }
+    // trail line
+    ctx.strokeStyle="#5a4a2c"; ctx.lineWidth=2.4; ctx.lineJoin="round"; ctx.beginPath();
+    pathSamples.forEach((p,i)=>{ const X=sx(p.x),Y=sz(p.z); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); });
+    ctx.stroke();
+    // dashed casing
+    ctx.strokeStyle="rgba(90,74,44,0.4)"; ctx.lineWidth=5; ctx.stroke();
+    // landmarks
+    const mark=(wx,wz,label,col)=>{ const X=sx(wx),Y=sz(wz);
+      ctx.fillStyle=col; ctx.fillRect(X-2.5,Y-2.5,5,5);
+      ctx.fillStyle="#3a2e1a"; ctx.font="8px 'Courier New',monospace"; ctx.fillText(label,X+5,Y+3); };
+    mark(1.6,14,"LOT","#6b5a36");
+    mark(pathX(-92)+6.8,-92,"SHED","#6b5a36");
+    mark(pathX(-168)-7.5,-168,"OUTPOST","#6b5a36");
+    mark(0,-120,"BRIDGE","#6b5a36");
+    // player position + facing
+    const p=Game.player, PX=sx(p.x), PY=sz(p.z);
+    ctx.save(); ctx.translate(PX,PY); ctx.rotate(-p.yaw);
+    ctx.fillStyle="#b23030"; ctx.beginPath();
+    ctx.moveTo(0,-6); ctx.lineTo(4,5); ctx.lineTo(0,2); ctx.lineTo(-4,5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  },
   radioLine(txt){ const e=$("radioline"); e.textContent=txt; e.style.opacity=0.95;
     clearTimeout(this._rt); this._rt=setTimeout(()=>e.style.opacity=0,3000); },
   read(text){
@@ -2023,7 +2249,8 @@ function resolveCollisions(){
   // soft world bounds — the brush closes in around the corridor
   const px=pathX(p.z);
   p.x=clamp(p.x,px-34,px+34);
-  p.z=clamp(p.z,-200,21);
+  const zMin = (Game.phase==="clearing"||Game.phase==="lost") ? -244 : -200;
+  p.z=clamp(p.z,zMin,21);
 }
 let bestInteract=null;
 function branchPrompt(it){
@@ -2120,8 +2347,8 @@ function update(dt){
   for(let i=Anim.length-1;i>=0;i--){const a=Anim[i];a.t+=dt;const k=Math.min(a.t/a.dur,1);
     a.fn(k); if(k>=1){a.end&&a.end();Anim.splice(i,1);} }
   Glimpse.tick();
-  Restorer.tick(performance.now());
   Rain.tick(dt);
+  ShadowWalkers.tick(dt);
   // dawn pressure
   if(Game.dawnT>0){
     Game.dawnT-=dt;
@@ -2140,6 +2367,7 @@ function update(dt){
 function render(){
   const p=Game.player;
   if(skyDome) skyDome.position.set(p.x,0,p.z);
+  if(Game.hasMap) UI.drawMinimap();
   const bobY=Math.sin(p.bob)*0.045, bobX=Math.cos(p.bob*0.5)*0.02;
   camera.position.set(p.x+bobX,p.y+bobY,p.z);
   camera.rotation.order="YXZ";
@@ -2171,6 +2399,7 @@ async function boot(){
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
   buildBranches(); buildWhiteMarkers(trees); buildRedMarkers(trees);
+  buildAbandonedClearing(); ShadowWalkers.build();
   UI.refresh(); UI.clock();
   $("beginbtn").textContent=STR.begin;
   Game.state="start";
