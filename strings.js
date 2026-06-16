@@ -13,7 +13,10 @@ export const STR = {
   objClear: "OBJECTIVE: Clear storm damage on Trail 6",
   objShed: "OBJECTIVE: Check the maintenance shed",
   objOutpost: "OBJECTIVE: Report to the ranger outpost",
-  objErase: "OBJECTIVE: ERASE TRAIL 6",
+  objErase: "OBJECTIVE: Collect the loose markers",
+  objCollect: "OBJECTIVE: Collect the loose markers",
+  objClearing: "OBJECTIVE: Inspect the cabins",
+  objLost: "OBJECTIVE: Get back to the car",
   objReturn: "OBJECTIVE: Return to the trailhead",
 
   taskBranches: "Clear fallen branches",
@@ -21,13 +24,19 @@ export const STR = {
   taskShedSign: "Inspect the posted notice",
   taskMap: "Check the wall map",
   taskRadio: "Check the radio",
-  taskErase: "Erase red markers",
+  taskErase: "Collect markers",
+  taskCollect: "Collect loose markers",
+  taskInspect: "Inspect the cabins",
 
   pBranch: "[E] Clear branch",
   pPaint: "[E] Repaint marker",
   pErase: "[E] Erase marker",
+  pCollect: "[E] Pick up marker",
+  pInspect: "[E] Inspect cabin",
   pRead: "[E] Read",
   pRadio: "[E] Check radio",
+  pTakeMap: "[E] Take park map",
+  toastMapTaken: "Park map acquired — follow it",
   close: "[E] Put down",
 
   signTrailhead: "TRAIL 6 — CLOSED FOR MAINTENANCE\nSTORM DAMAGE AHEAD\nAUTHORIZED PERSONNEL ONLY",
@@ -43,10 +52,20 @@ export const STR = {
 
   radioContinue: "…CONTINUE RESTORATION…",
   radioConfirmed: "…RESTORATION CONFIRMED…",
+  radioGarbled: "…[unintelligible]…",
+  radioConcerned1: "…where are you. Where ARE you—",
+  radioConcerned2: "…why are you out there. Nobody sent—  come back to the road. Now.",
+
+  cabinNote1: "The door isn't locked — there's no door. The frame\nstands but the hinges rusted through years ago.\nInside: a stove furred with rust, a cot, a calendar.\nThe calendar's last page is decades old.",
+  cabinNote2: "Dust lies even and thick on everything, undisturbed.\nA child's boot by the cold hearth, cracked stiff.\nNothing here has been touched in a very long time.\nNothing here was abandoned in a hurry.",
+  cabinNote3: "Ledgers on a shelf, swollen with damp. One is open.\nThe last legible line: \"closed the connectors, took\nup the blazes, sealed the way.\" The ink stops there.\nThe pages after it were torn out.",
+  cabinNote4: "This one's roof has fallen in. Saplings grow through\nthe floorboards — thin trees, decades old. Whatever\nlived here, the forest took back its ground long ago.\n\nBehind you, something moves between the trunks.",
 
   toastBranchesDone: "Storm damage cleared.",
   toastMarkersDone: "Markers repainted.",
-  toastRedFound: "These markers are not yours.",
+  toastRedFound: "These were knocked loose. Better collect them.",
+  toastClearing: "The trail ends at a clearing. Cabins.",
+  toastLost: "The path you came in on is gone.",
   toastSilence: "The forest has gone quiet.",
   toastRepaint: "Something repainted a marker behind you.",
 
@@ -54,6 +73,8 @@ export const STR = {
   endGoodText: "The park forgot the way.",
   endBadTitle: "PUBLIC ACCESS",
   endBadText: "Trail restored.",
+  endLostTitle: "OFF TRAIL",
+  endLostText: "The way in was the only way out.\nThey kept calling. You kept not answering.",
   endRestart: "WORK ANOTHER SHIFT",
 
   counterErase: (n, total) => `Red markers remaining: ${n} / ${total}`,
