@@ -728,17 +728,18 @@ function buildMaterials(){
   const flMap=load("./assets/textures/ground_floor.png",[90,90]);
   const flNrm=loadN("./assets/textures/ground_floor_n.png",[90,90]);
   MATS.floor=new THREE.MeshStandardMaterial({map:flMap,normalMap:flNrm,
-    normalScale:new THREE.Vector2(2.4,2.4),roughness:0.97,metalness:0.0,color:0xa8a8a8});
-  // Keep ground surfaces in one seamless forest-floor family; color shifts mark
-  // compressed trail/lot wear without switching to unrelated textures.
-  const pathMap=load("./assets/textures/ground_floor.png",[1,1]);
-  const pathNrm=loadN("./assets/textures/ground_floor_n.png",[1,1]);
+    normalScale:new THREE.Vector2(2.4,2.4),roughness:0.97,metalness:0.0,color:0x9a9a9a});
+  // Each ground surface gets its own albedo (forest floor / dirt trail / gravel lot)
+  // so transitions read as real material changes. Brightness multipliers are kept
+  // close so meeting edges don't form a hard light/dark seam.
+  const pathMap=load("./assets/textures/ground_dirt.png",[1,1]);
+  const pathNrm=loadN("./assets/textures/ground_dirt_n.png",[1,1]);
   MATS.dirt=new THREE.MeshStandardMaterial({map:pathMap,normalMap:pathNrm,
-    normalScale:new THREE.Vector2(2.0,2.0),roughness:0.98,metalness:0.0,color:0x8d917b});
-  const lotMap=load("./assets/textures/ground_floor.png",[12,8]);
-  const lotNrm=loadN("./assets/textures/ground_floor_n.png",[12,8]);
+    normalScale:new THREE.Vector2(2.0,2.0),roughness:0.98,metalness:0.0,color:0x9a9a9a});
+  const lotMap=load("./assets/textures/ground_gravel.png",[10,6]);
+  const lotNrm=loadN("./assets/textures/ground_gravel_n.png",[10,6]);
   MATS.gravel=new THREE.MeshStandardMaterial({map:lotMap,normalMap:lotNrm,
-    normalScale:new THREE.Vector2(2.6,2.6),roughness:0.99,metalness:0.0,color:0x7b806d});
+    normalScale:new THREE.Vector2(2.6,2.6),roughness:0.99,metalness:0.0,color:0x969690});
   MATS.bark=new THREE.MeshLambertMaterial({map:TEX.bark});
   MATS.canopy=new THREE.MeshLambertMaterial({color:0x27392a,flatShading:true});
   MATS.canopy2=new THREE.MeshLambertMaterial({color:0x1f3024,flatShading:true});
@@ -2027,8 +2028,8 @@ function restoreOneMarker(){
 const Triggers=[]; // {x,z,r,once?,cond?,fn,fired?}
 const Anim=[];     // {t,dur,fn(k),end?}
 const Rain={
-  active:false, mesh:null, mist:null, pos:null, speeds:null, mistPos:null, mistSpeeds:null,
-  count:1150, mistCount:190,
+  active:false, mesh:null, pos:null, speeds:null,
+  count:1150,
   start(){
     if(this.active) return;
     this.active=true;
@@ -2047,22 +2048,6 @@ const Rain={
     this.mesh=new THREE.LineSegments(geo,mat);
     this.mesh.renderOrder=4;
     scene.add(this.mesh);
-    this.mistPos=new Float32Array(this.mistCount*3);
-    this.mistSpeeds=new Float32Array(this.mistCount);
-    for(let i=0;i<this.mistCount;i++){
-      const j=i*3;
-      this.mistPos[j]=p.x+R(-28,28); this.mistPos[j+1]=R(0.15,3.2); this.mistPos[j+2]=p.z+R(-28,28);
-      this.mistSpeeds[i]=R(0.18,0.55);
-    }
-    const mistGeo=new THREE.BufferGeometry();
-    mistGeo.setAttribute("position",new THREE.BufferAttribute(this.mistPos,3));
-    const mistMat=new THREE.PointsMaterial({
-      color:0x9aa9a5,transparent:true,opacity:0.16,size:1.15,sizeAttenuation:true,
-      depthWrite:false,fog:true
-    });
-    this.mist=new THREE.Points(mistGeo,mistMat);
-    this.mist.renderOrder=3;
-    scene.add(this.mist);
     const fogFrom=scene.fog.density, fogColorFrom=scene.fog.color.clone();
     const fogColorTo=new THREE.Color(0x1c2525);
     const hemiFrom=hemi.intensity, moonFrom=moon.intensity;
@@ -2097,17 +2082,6 @@ const Rain={
       this.pos[j+3]=x-0.24; this.pos[j+4]=y-len; this.pos[j+5]=z+0.20;
     }
     this.mesh.geometry.attributes.position.needsUpdate=true;
-    if(this.mist){
-      for(let i=0;i<this.mistCount;i++){
-        const j=i*3;
-        let x=this.mistPos[j]-dt*this.mistSpeeds[i], y=this.mistPos[j+1]+Math.sin(performance.now()*0.001+i)*dt*0.08, z=this.mistPos[j+2]+dt*this.mistSpeeds[i]*0.55;
-        if(Math.abs(x-p.x)>31 || Math.abs(z-p.z)>31 || y>3.4){
-          x=p.x+R(-28,28); y=R(0.08,1.5); z=p.z+R(-28,28);
-        }
-        this.mistPos[j]=x; this.mistPos[j+1]=y; this.mistPos[j+2]=z;
-      }
-      this.mist.geometry.attributes.position.needsUpdate=true;
-    }
   }
 };
 const Events={
