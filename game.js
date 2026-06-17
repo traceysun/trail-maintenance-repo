@@ -415,42 +415,6 @@ function buildTextures(){
     }
     c.putImageData(img,0,0);
   });
-  TEX.carPaint = makeTileTex(128,(c,S)=>{ // oxidized paint, rust blooms, old leaf staining
-    ditherFill(c,S,[48,70,63],[26,32,24],valueNoiseTile(S,7,rng),0.46);
-    c.fillStyle="rgba(93,47,23,0.78)";
-    for(let i=0;i<34;i++){
-      const x=R(0,S),y=R(0,S),rx=R(2,9),ry=R(1,6);
-      c.beginPath(); c.ellipse(x,y,rx,ry,R(0,Math.PI),0,Math.PI*2); c.fill();
-    }
-    c.fillStyle="rgba(31,45,29,0.72)";
-    for(let i=0;i<24;i++){
-      const x=R(0,S),y=R(0,S),rx=R(3,12),ry=R(1,5);
-      c.beginPath(); c.ellipse(x,y,rx,ry,R(0,Math.PI),0,Math.PI*2); c.fill();
-    }
-    c.strokeStyle="rgba(185,170,124,0.26)";
-    c.lineWidth=1;
-    for(let i=0;i<22;i++){
-      const x=R(0,S),y=R(0,S),len=R(7,28);
-      c.beginPath(); c.moveTo(x,y); c.lineTo(x+len,y+R(-4,4)); c.stroke();
-    }
-  });
-  TEX.crackedGlass = makeTileTex(128,(c,S)=>{
-    const g=c.createLinearGradient(0,0,S,S);
-    g.addColorStop(0,"#172528"); g.addColorStop(0.55,"#0a1113"); g.addColorStop(1,"#263436");
-    c.fillStyle=g; c.fillRect(0,0,S,S);
-    c.fillStyle="rgba(190,210,190,0.06)";
-    for(let i=0;i<18;i++) c.fillRect(R(0,S),R(0,S),R(8,26),1);
-    c.strokeStyle="rgba(218,226,205,0.55)";
-    c.lineWidth=1.1;
-    const cracks=[[24,22,52,48,92,38],[78,20,72,52,103,76],[34,88,58,62,71,94]];
-    cracks.forEach(line=>{
-      c.beginPath(); c.moveTo(line[0],line[1]);
-      for(let i=2;i<line.length;i+=2) c.lineTo(line[i],line[i+1]);
-      c.stroke();
-    });
-    c.strokeStyle="rgba(218,226,205,0.35)";
-    for(let i=0;i<9;i++){ const x=R(26,96),y=R(28,88); c.beginPath(); c.moveTo(x,y); c.lineTo(x+R(-22,22),y+R(-18,18)); c.stroke(); }
-  },{filter:false});
   // text canvases (signs / map) — not tiles
   TEX.sign = (lines,opts={})=>{
     const w=opts.w||256,h=opts.h||160;
@@ -726,35 +690,6 @@ function addBoxCol(cx,cz,w,d,ry=0){
 }
 function addInteract(o){ o.active=o.active??true; interactables.push(o); return o; }
 
-/* ---- wind: shared time uniform + vertex-displacement injector ----
-   Sways foliage by bending vertices above `base` (in the geometry's own units),
-   most for the tips, none at the trunk/root. Phase varies per instance from the
-   instanceMatrix translation so a whole field doesn't sway in lockstep. */
-const U_TIME={value:0};
-const WIND={gust:0};
-function addWind(mat,{amp=0.1,speed=1.4,base=0.0,heightRef=0.5,instanced=true}={}){
-  if(!mat) return mat;
-  const f=n=>Number(n).toFixed(4);
-  mat.onBeforeCompile=(shader)=>{
-    shader.uniforms.uTime=U_TIME;
-    const posExpr = instanced
-      ? "vec3 wp=vec3(instanceMatrix[3].x,0.0,instanceMatrix[3].z);"
-      : "vec3 wp=(modelMatrix*vec4(transformed,1.0)).xyz;";
-    shader.vertexShader = "uniform float uTime;\n"+shader.vertexShader.replace(
-      "#include <begin_vertex>",
-      `#include <begin_vertex>
-      { ${posExpr}
-        float hf=clamp((transformed.y-(${f(base)}))/(${f(heightRef)}),0.0,1.0); hf=hf*hf;
-        float ph=wp.x*0.18+wp.z*0.21;
-        float g=1.0+0.6*sin(uTime*0.37+ph*0.5);
-        transformed.x += sin(uTime*${f(speed)}+ph)*${f(amp)}*hf*g;
-        transformed.z += sin(uTime*${f(speed*0.8)}+ph*1.3)*${f(amp*0.7)}*hf*g;
-      }`);
-  };
-  mat.needsUpdate=true;
-  return mat;
-}
-
 const MATS={};
 function buildMaterials(){
   const TL=new THREE.TextureLoader();
@@ -764,17 +699,17 @@ function buildMaterials(){
   const flMap=load("./assets/textures/ground_floor.png",[90,90]);
   const flNrm=loadN("./assets/textures/ground_floor_n.png",[90,90]);
   MATS.floor=new THREE.MeshStandardMaterial({map:flMap,normalMap:flNrm,
-    normalScale:new THREE.Vector2(2.4,2.4),roughness:0.97,metalness:0.0,color:0xa8a8a8});
+    normalScale:new THREE.Vector2(1.2,1.2),roughness:0.97,metalness:0.0,color:0xa8a8a8});
   // Keep ground surfaces in one seamless forest-floor family; color shifts mark
   // compressed trail/lot wear without switching to unrelated textures.
   const pathMap=load("./assets/textures/ground_floor.png",[1,1]);
   const pathNrm=loadN("./assets/textures/ground_floor_n.png",[1,1]);
   MATS.dirt=new THREE.MeshStandardMaterial({map:pathMap,normalMap:pathNrm,
-    normalScale:new THREE.Vector2(2.0,2.0),roughness:0.98,metalness:0.0,color:0x8d917b});
+    normalScale:new THREE.Vector2(1.0,1.0),roughness:0.98,metalness:0.0,color:0x8d917b});
   const lotMap=load("./assets/textures/ground_floor.png",[12,8]);
   const lotNrm=loadN("./assets/textures/ground_floor_n.png",[12,8]);
   MATS.gravel=new THREE.MeshStandardMaterial({map:lotMap,normalMap:lotNrm,
-    normalScale:new THREE.Vector2(2.6,2.6),roughness:0.99,metalness:0.0,color:0x7b806d});
+    normalScale:new THREE.Vector2(1.35,1.35),roughness:0.99,metalness:0.0,color:0x7b806d});
   MATS.bark=new THREE.MeshLambertMaterial({map:TEX.bark});
   MATS.canopy=new THREE.MeshLambertMaterial({color:0x27392a,flatShading:true});
   MATS.canopy2=new THREE.MeshLambertMaterial({color:0x1f3024,flatShading:true});
@@ -795,13 +730,6 @@ function buildMaterials(){
   MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
   MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
   MATS.stain=new THREE.MeshBasicMaterial({color:0x151411,transparent:true,opacity:0.34,side:THREE.DoubleSide});
-  MATS.carPaint=new THREE.MeshStandardMaterial({map:TEX.carPaint,color:0xb0b6a8,roughness:0.98,metalness:0.04});
-  MATS.carPaintDark=new THREE.MeshStandardMaterial({map:TEX.carPaint,color:0x59645c,roughness:1.0,metalness:0.03});
-  MATS.carRust=new THREE.MeshStandardMaterial({color:0x60341f,roughness:1.0,metalness:0.01,flatShading:true});
-  MATS.carGlass=new THREE.MeshStandardMaterial({map:TEX.crackedGlass,color:0x87958c,transparent:true,opacity:0.72,roughness:0.9,metalness:0.02,side:THREE.DoubleSide});
-  MATS.rubber=new THREE.MeshStandardMaterial({color:0x090b0a,roughness:0.96,metalness:0.0});
-  MATS.deadChrome=new THREE.MeshStandardMaterial({color:0x7f7d70,roughness:0.88,metalness:0.45});
-  MATS.carMoss=new THREE.MeshLambertMaterial({color:0x243b24,side:THREE.DoubleSide});
 }
 function box(w,h,d,mat,x,y,z,ry=0,collide=false,invisible=false){
   const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
@@ -859,8 +787,7 @@ async function loadTreeMesh(){
       geo.computeBoundingBox();
       const bb=geo.boundingBox, h=bb.max.y-bb.min.y;
       geo.translate(0,-bb.min.y,0);
-      if(mat){ mat.fog=true; mat.roughness=1.0; mat.metalness=0.0; mat.side=THREE.FrontSide;
-        addWind(mat,{amp:0.035*h, speed:0.95, base:0.45*h, heightRef:0.55*h}); }
+      if(mat){ mat.fog=true; mat.roughness=1.0; mat.metalness=0.0; mat.side=THREE.FrontSide; }
       out.push({geometry:geo, material:mat, unitH:h});
     }catch(e){ console.warn("tree mesh load failed",fn,e); }
   }
@@ -925,8 +852,7 @@ async function loadBushMesh(){
       geo.computeBoundingBox();
       const bb=geo.boundingBox, h=bb.max.y-bb.min.y;
       geo.translate(0,-bb.min.y,0);
-      if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.DoubleSide;
-        addWind(mat,{amp:0.14*h, speed:1.5, base:0.15*h, heightRef:0.6*h}); }
+      if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.DoubleSide; }
       out.push({geometry:geo, material:mat, unitH:h});
     }catch(e){ console.warn("bush mesh load failed",fn,e); }
   }
@@ -1165,7 +1091,6 @@ function buildGrass(){
   tex.colorSpace=THREE.SRGBColorSpace;
   const mat=new THREE.MeshLambertMaterial({map:tex,transparent:true,alphaTest:0.4,
     side:THREE.DoubleSide,depthWrite:true,fog:true});
-  addWind(mat,{amp:0.13,speed:1.8,base:0.05,heightRef:0.45});
   // one tuft = two crossed quads merged into a single geometry
   const q1=new THREE.PlaneGeometry(0.7,0.5); q1.translate(0,0.25,0);
   const q2=q1.clone(); q2.rotateY(Math.PI/2);
@@ -1692,112 +1617,6 @@ function buildTrailhead(){
   Triggers.push({x:0,z:7,r:3.4,cond:()=>Game.phase==="return",fn(){ Endings.good(); }});
 }
 
-function carHullGeometry(width=2.22){
-  const shape=new THREE.Shape();
-  const pts=[
-    [-2.12,0.18],[2.08,0.18],[2.08,0.78],[1.25,0.90],[0.62,1.48],
-    [-0.58,1.55],[-1.12,0.98],[-2.08,0.88]
-  ];
-  shape.moveTo(pts[0][0],pts[0][1]);
-  for(let i=1;i<pts.length;i++) shape.lineTo(pts[i][0],pts[i][1]);
-  shape.closePath();
-  const geo=new THREE.ExtrudeGeometry(shape,{depth:width,bevelEnabled:true,bevelThickness:0.055,bevelSize:0.055,bevelSegments:2});
-  const p=geo.attributes.position;
-  for(let i=0;i<p.count;i++){
-    const lx=p.getX(i), ly=p.getY(i), lz=p.getZ(i);
-    p.setXYZ(i,lz-width/2,ly,lx);
-  }
-  p.needsUpdate=true; geo.computeVertexNormals(); return geo;
-}
-function addCarMesh(group,geo,mat,x,y,z,rx=0,ry=0,rz=0){
-  const m=new THREE.Mesh(geo,mat);
-  m.position.set(x,y,z); m.rotation.set(rx,ry,rz); group.add(m); return m;
-}
-function buildAbandonedLeafCar(x,z,ry=-0.08){
-  const car=new THREE.Group();
-  car.position.set(x,0,z); car.rotation.y=ry; scene.add(car);
-
-  addCarMesh(car,carHullGeometry(),MATS.carPaint,0,0,0);
-  addCarMesh(car,new THREE.BoxGeometry(1.92,0.045,1.08),MATS.carPaintDark,0,1.03,-1.43,-0.08,0,0);
-  addCarMesh(car,new THREE.BoxGeometry(1.72,0.055,0.78),MATS.carPaintDark,0,1.02,1.45,0.06,0,0);
-  addCarMesh(car,new THREE.BoxGeometry(1.52,0.06,1.00),MATS.carPaint,0,1.63,0.08,0.03,0,0);
-
-  const glassFront=addCarMesh(car,new THREE.PlaneGeometry(1.42,0.48),MATS.carGlass,0,1.33,-0.78,-0.55,0,0);
-  glassFront.scale.y=0.92;
-  addCarMesh(car,new THREE.PlaneGeometry(1.28,0.42),MATS.carGlass,0,1.30,0.94,0.48,Math.PI,0);
-  for(const side of [-1,1]){
-    const sy=side>0?Math.PI/2:-Math.PI/2;
-    addCarMesh(car,new THREE.PlaneGeometry(0.78,0.43),MATS.carGlass,side*1.13,1.32,-0.30,0,sy,0);
-    addCarMesh(car,new THREE.PlaneGeometry(0.72,0.39),MATS.carGlass,side*1.13,1.28,0.58,0,sy,0);
-    addCarMesh(car,new THREE.PlaneGeometry(1.08,0.62),MATS.carPaintDark,side*1.135,0.78,-0.36,0,sy,0);
-    addCarMesh(car,new THREE.PlaneGeometry(0.94,0.55),MATS.carPaintDark,side*1.135,0.73,0.78,0,sy,0);
-    for(let i=0;i<5;i++){
-      const strip=addCarMesh(car,new THREE.BoxGeometry(0.025,0.025,R(0.48,0.98)),MATS.deadChrome,side*1.16,R(0.72,1.22),R(-1.55,1.45),0,0,R(-0.2,0.2));
-      strip.rotation.y=sy;
-    }
-  }
-
-  const tireGeo=new THREE.CylinderGeometry(0.42,0.42,0.28,18);
-  const hubGeo=new THREE.CylinderGeometry(0.20,0.20,0.305,12);
-  const wheelSpots=[[-1.18,-1.38,0.60],[-1.18,1.37,0.44],[1.18,-1.38,0.54],[1.18,1.37,0.39]];
-  wheelSpots.forEach((w,i)=>{
-    const tire=addCarMesh(car,tireGeo,MATS.rubber,w[0],w[2],w[1],0,0,Math.PI/2);
-    tire.scale.set(i%2?0.66:0.78,1,1.05);
-    addCarMesh(car,hubGeo,i===1?MATS.carRust:MATS.deadChrome,w[0]*1.01,w[2],w[1],0,0,Math.PI/2).scale.set(0.9,0.9,0.9);
-  });
-  addCarMesh(car,new THREE.BoxGeometry(2.12,0.12,0.12),MATS.deadChrome,0,0.56,-2.16,0,0,0.04);
-  addCarMesh(car,new THREE.BoxGeometry(2.02,0.11,0.12),MATS.deadChrome,0,0.54,2.13,0,0,-0.03);
-  addCarMesh(car,new THREE.BoxGeometry(0.24,0.16,0.045),MATS.paper,-0.62,0.76,-2.23,0,0,0);
-  addCarMesh(car,new THREE.BoxGeometry(0.24,0.16,0.045),MATS.paper,0.62,0.76,-2.23,0,0,0);
-  addCarMesh(car,new THREE.BoxGeometry(0.20,0.13,0.045),MATS.markerRed,-0.72,0.70,2.22,0,Math.PI,0);
-  addCarMesh(car,new THREE.BoxGeometry(0.20,0.13,0.045),MATS.markerRed,0.72,0.70,2.22,0,Math.PI,0);
-
-  const rustGeo=new THREE.PlaneGeometry(0.34,0.18);
-  for(let i=0;i<28;i++){
-    const top=rng()<0.36;
-    if(top){
-      const p=addCarMesh(car,rustGeo,MATS.carRust,R(-0.85,0.85),R(1.04,1.62),R(-1.75,1.62),-Math.PI/2+R(-0.12,0.12),0,R(0,6.28));
-      p.scale.set(R(0.55,1.55),R(0.45,1.3),1);
-    } else {
-      const side=rng()<0.5?-1:1, sy=side>0?Math.PI/2:-Math.PI/2;
-      const p=addCarMesh(car,rustGeo,MATS.carRust,side*1.145,R(0.55,1.18),R(-1.82,1.78),0,sy,R(-0.25,0.25));
-      p.scale.set(R(0.65,1.7),R(0.55,1.45),1);
-    }
-  }
-
-  const oil=addCarMesh(car,new THREE.CircleGeometry(1.25,24),MATS.stain.clone(),0,0.018,0.22,-Math.PI/2,0,0);
-  oil.scale.set(1.45,0.72,1); oil.material.opacity=0.52;
-  const leafGeo=new THREE.PlaneGeometry(0.18,0.07);
-  for(let i=0;i<125;i++){
-    const r=rng();
-    let px,py,pz;
-    if(r<0.38){ px=R(-0.75,0.75); py=1.71+R(0,0.035); pz=R(-0.38,0.70); }
-    else if(r<0.70){ px=R(-0.86,0.86); py=1.08+R(0,0.035); pz=R(-1.92,-0.72); }
-    else { px=R(-0.92,0.92); py=1.04+R(0,0.035); pz=R(0.90,1.98); }
-    const leaf=addCarMesh(car,leafGeo,i%2?MATS.leafA:MATS.leafB,px,py,pz,-Math.PI/2+R(-0.16,0.16),0,R(0,6.28));
-    leaf.scale.set(R(0.7,1.9),R(0.8,1.45),1);
-  }
-  const mossGeo=new THREE.PlaneGeometry(0.28,0.12);
-  for(let i=0;i<22;i++){
-    const p=addCarMesh(car,mossGeo,MATS.carMoss,R(-0.92,0.92),R(1.08,1.7),R(-1.72,1.75),-Math.PI/2+R(-0.1,0.1),0,R(0,6.28));
-    p.scale.set(R(0.8,2.2),R(0.7,1.7),1);
-  }
-
-  const bladeA=new THREE.PlaneGeometry(0.16,0.55); bladeA.translate(0,0.275,0);
-  const bladeB=bladeA.clone(); bladeB.rotateY(Math.PI/2);
-  const weedGeo=mergeGeometries([bladeA,bladeB]);
-  for(let i=0;i<54;i++){
-    const edge=rng()<0.68;
-    const px=edge?(rng()<0.5?R(-1.95,-1.18):R(1.18,1.95)):R(-1.18,1.18);
-    const pz=edge?R(-2.12,2.10):(rng()<0.5?R(-2.36,-1.78):R(1.78,2.36));
-    const weed=addCarMesh(car,weedGeo,MATS.weed,px,0.016,pz,0,R(0,6.28),R(-0.12,0.12));
-    const s=R(0.55,1.35); weed.scale.set(s,s*R(0.9,1.65),s);
-  }
-
-  addBoxCol(x,z,3.25,4.95,ry);
-  return car;
-}
-
 // An empty gravel parking lot at the start. The player spawns here in the open,
 // with the trailhead sign marking where the lot meets the trees.
 function buildParkingLot(){
@@ -1841,7 +1660,6 @@ function buildParkingLot(){
   const grassTex=new THREE.TextureLoader().load("./assets/textures/grass_tuft.png");
   grassTex.colorSpace=THREE.SRGBColorSpace;
   const grassMat=new THREE.MeshLambertMaterial({map:grassTex,transparent:true,alphaTest:0.35,side:THREE.DoubleSide,fog:true});
-  addWind(grassMat,{amp:0.11,speed:1.9,base:0.04,heightRef:0.38});
   const q1=new THREE.PlaneGeometry(0.55,0.42); q1.translate(0,0.21,0);
   const q2=q1.clone(); q2.rotateY(Math.PI/2);
   const tuftGeo=mergeGeometries([q1,q2]);
@@ -1863,7 +1681,6 @@ function buildParkingLot(){
     leaf.scale.set(R(0.7,1.8),R(0.7,1.35),1);
     leaf.position.set(R(-12.4,15.4),0.024,R(6.2,21.9)); scene.add(leaf);
   }
-  buildAbandonedLeafCar(-1.3,14.6,-0.06);
 }
 
 // Pack extra trees and bushes into the four corners of the backdrop box and along
@@ -2439,7 +2256,6 @@ function updateBranchHold(dt,held){
 }
 function update(dt){
   const p=Game.player;
-  U_TIME.value += dt;          // drives all foliage wind
   // look
   const pad=Input.pad();
   const sens=0.0023;
@@ -2453,7 +2269,6 @@ function update(dt){
   if(Input.held.has("left"))mx-=1; if(Input.held.has("right"))mx+=1;
   mx+=Input.stick.x+pad.mx; mz+=Input.stick.y+pad.mz;
   const ml=Math.hypot(mx,mz); if(ml>1){mx/=ml;mz/=ml;}
-  p.moveAmt=ml; p.strafe=mx;          // for camera bob / strafe-lean in render
   const sp=3.1;
   const sy=Math.sin(p.yaw),cy=Math.cos(p.yaw);
   p.x+=(-sy*-mz + cy*mx)*sp*dt;
@@ -2509,63 +2324,17 @@ function update(dt){
     Game.timecode+=dt*30; // lazy evening clock
   }
 }
-// Drifting motes / falling debris that hang in the air and catch the flashlight.
-// The field stays centred on the player and wraps, so it feels infinite & alive.
-const Atmosphere={
-  pts:null, vel:null, N:360, box:48, topY:7.0,
-  build(){
-    const N=this.N, pos=new Float32Array(N*3); this.vel=new Float32Array(N*2);
-    const h=this.box/2;
-    for(let i=0;i<N;i++){
-      pos[i*3]=R(-h,h); pos[i*3+1]=R(0.2,this.topY); pos[i*3+2]=R(-h,h);
-      this.vel[i*2]=R(-0.12,0.12); this.vel[i*2+1]=R(0.06,0.30);
-    }
-    const g=new THREE.BufferGeometry();
-    g.setAttribute("position",new THREE.BufferAttribute(pos,3));
-    const m=new THREE.PointsMaterial({color:0x9aa39b,size:0.05,sizeAttenuation:true,
-      transparent:true,opacity:0.45,depthWrite:false,fog:true,blending:THREE.AdditiveBlending});
-    this.pts=new THREE.Points(g,m); this.pts.frustumCulled=false;
-    scene.add(this.pts);
-  },
-  tick(p){
-    if(!this.pts) return;
-    const pos=this.pts.geometry.attributes.position.array, N=this.N, h=this.box/2, t=U_TIME.value;
-    for(let i=0;i<N;i++){
-      pos[i*3]   += (this.vel[i*2]+Math.sin(t*0.6+i)*0.05)*0.016;
-      pos[i*3+1] -= this.vel[i*2+1]*0.016;
-      if(pos[i*3+1]<0.05) pos[i*3+1]+=this.topY;
-      if(pos[i*3]> h) pos[i*3]-=this.box; else if(pos[i*3]<-h) pos[i*3]+=this.box;
-      if(pos[i*3+2]> h) pos[i*3+2]-=this.box; else if(pos[i*3+2]<-h) pos[i*3+2]+=this.box;
-    }
-    this.pts.position.set(p.x,0,p.z);
-    this.pts.geometry.attributes.position.needsUpdate=true;
-  }
-};
-
-let flashDirCur=null;
-const _fwd=new THREE.Vector3(), _sway=new THREE.Vector3();
 function render(){
   const p=Game.player;
   if(skyDome) skyDome.position.set(p.x,0,p.z);
-  // camera feel: walk bob blends into a slow idle breathing sway when standing still,
-  // plus a subtle lean into strafing for weight.
-  p.breath=(p.breath||0)+0.016;
-  const walk=clamp(p.moveAmt||0,0,1);
-  const bobY=Math.sin(p.bob)*0.045*walk + Math.sin(p.breath*1.5)*0.011*(1-walk);
-  const bobX=Math.cos(p.bob*0.5)*0.025*walk + Math.sin(p.breath*0.9)*0.006*(1-walk);
-  const targetRoll=(p.strafe||0)*0.04 + Math.sin(p.bob*0.5)*0.012*walk;
-  p.roll=lerp(p.roll||0,targetRoll,0.12);
+  const bobY=Math.sin(p.bob)*0.045, bobX=Math.cos(p.bob*0.5)*0.02;
   camera.position.set(p.x+bobX,p.y+bobY,p.z);
   camera.rotation.order="YXZ";
-  camera.rotation.y=p.yaw; camera.rotation.x=p.pitch; camera.rotation.z=p.roll;
-  // flashlight follows with smoothed hand-lag + a faint breathing sway
+  camera.rotation.y=p.yaw; camera.rotation.x=p.pitch;
+  // flashlight follows with slight lag
   flashlight.position.copy(camera.position);
-  _fwd.set(0,0,-1).applyEuler(camera.rotation);
-  if(!flashDirCur) flashDirCur=_fwd.clone();
-  flashDirCur.lerp(_fwd,0.18).normalize();
-  _sway.set(Math.sin(p.breath*1.3)*0.06,Math.cos(p.breath*1.1)*0.05,0).applyEuler(camera.rotation);
-  flashTarget.position.copy(camera.position).addScaledVector(flashDirCur,8).add(_sway);
-  Atmosphere.tick(p);
+  const fwd=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation);
+  flashTarget.position.copy(camera.position).addScaledVector(fwd,8);
   renderer.render(scene,camera);
 }
 
@@ -2586,7 +2355,6 @@ async function boot(){
   const trees=buildTrees();
   buildBushes();
   buildGrass();
-  Atmosphere.build();
   padBackdropCorners();
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
