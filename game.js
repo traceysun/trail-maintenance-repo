@@ -726,6 +726,35 @@ function addBoxCol(cx,cz,w,d,ry=0){
 }
 function addInteract(o){ o.active=o.active??true; interactables.push(o); return o; }
 
+/* ---- wind: shared time uniform + vertex-displacement injector ----
+   Sways foliage by bending vertices above `base` (in the geometry's own units),
+   most for the tips, none at the trunk/root. Phase varies per instance from the
+   instanceMatrix translation so a whole field doesn't sway in lockstep. */
+const U_TIME={value:0};
+const WIND={gust:0};
+function addWind(mat,{amp=0.1,speed=1.4,base=0.0,heightRef=0.5,instanced=true}={}){
+  if(!mat) return mat;
+  const f=n=>Number(n).toFixed(4);
+  mat.onBeforeCompile=(shader)=>{
+    shader.uniforms.uTime=U_TIME;
+    const posExpr = instanced
+      ? "vec3 wp=vec3(instanceMatrix[3].x,0.0,instanceMatrix[3].z);"
+      : "vec3 wp=(modelMatrix*vec4(transformed,1.0)).xyz;";
+    shader.vertexShader = "uniform float uTime;\n"+shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+      { ${posExpr}
+        float hf=clamp((transformed.y-(${f(base)}))/(${f(heightRef)}),0.0,1.0); hf=hf*hf;
+        float ph=wp.x*0.18+wp.z*0.21;
+        float g=1.0+0.6*sin(uTime*0.37+ph*0.5);
+        transformed.x += sin(uTime*${f(speed)}+ph)*${f(amp)}*hf*g;
+        transformed.z += sin(uTime*${f(speed*0.8)}+ph*1.3)*${f(amp*0.7)}*hf*g;
+      }`);
+  };
+  mat.needsUpdate=true;
+  return mat;
+}
+
 const MATS={};
 function buildMaterials(){
   const TL=new THREE.TextureLoader();
@@ -735,17 +764,17 @@ function buildMaterials(){
   const flMap=load("./assets/textures/ground_floor.png",[90,90]);
   const flNrm=loadN("./assets/textures/ground_floor_n.png",[90,90]);
   MATS.floor=new THREE.MeshStandardMaterial({map:flMap,normalMap:flNrm,
-    normalScale:new THREE.Vector2(1.2,1.2),roughness:0.97,metalness:0.0,color:0xa8a8a8});
+    normalScale:new THREE.Vector2(2.4,2.4),roughness:0.97,metalness:0.0,color:0xa8a8a8});
   // Keep ground surfaces in one seamless forest-floor family; color shifts mark
   // compressed trail/lot wear without switching to unrelated textures.
   const pathMap=load("./assets/textures/ground_floor.png",[1,1]);
   const pathNrm=loadN("./assets/textures/ground_floor_n.png",[1,1]);
   MATS.dirt=new THREE.MeshStandardMaterial({map:pathMap,normalMap:pathNrm,
-    normalScale:new THREE.Vector2(1.0,1.0),roughness:0.98,metalness:0.0,color:0x8d917b});
+    normalScale:new THREE.Vector2(2.0,2.0),roughness:0.98,metalness:0.0,color:0x8d917b});
   const lotMap=load("./assets/textures/ground_floor.png",[12,8]);
   const lotNrm=loadN("./assets/textures/ground_floor_n.png",[12,8]);
   MATS.gravel=new THREE.MeshStandardMaterial({map:lotMap,normalMap:lotNrm,
-    normalScale:new THREE.Vector2(1.35,1.35),roughness:0.99,metalness:0.0,color:0x7b806d});
+    normalScale:new THREE.Vector2(2.6,2.6),roughness:0.99,metalness:0.0,color:0x7b806d});
   MATS.bark=new THREE.MeshLambertMaterial({map:TEX.bark});
   MATS.canopy=new THREE.MeshLambertMaterial({color:0x27392a,flatShading:true});
   MATS.canopy2=new THREE.MeshLambertMaterial({color:0x1f3024,flatShading:true});
@@ -830,7 +859,8 @@ async function loadTreeMesh(){
       geo.computeBoundingBox();
       const bb=geo.boundingBox, h=bb.max.y-bb.min.y;
       geo.translate(0,-bb.min.y,0);
-      if(mat){ mat.fog=true; mat.roughness=1.0; mat.metalness=0.0; mat.side=THREE.FrontSide; }
+      if(mat){ mat.fog=true; mat.roughness=1.0; mat.metalness=0.0; mat.side=THREE.FrontSide;
+        addWind(mat,{amp:0.035*h, speed:0.95, base:0.45*h, heightRef:0.55*h}); }
       out.push({geometry:geo, material:mat, unitH:h});
     }catch(e){ console.warn("tree mesh load failed",fn,e); }
   }
@@ -895,7 +925,8 @@ async function loadBushMesh(){
       geo.computeBoundingBox();
       const bb=geo.boundingBox, h=bb.max.y-bb.min.y;
       geo.translate(0,-bb.min.y,0);
-      if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.DoubleSide; }
+      if(mat){ mat.fog=true; if('roughness'in mat){mat.roughness=1.0;mat.metalness=0.0;} mat.side=THREE.DoubleSide;
+        addWind(mat,{amp:0.14*h, speed:1.5, base:0.15*h, heightRef:0.6*h}); }
       out.push({geometry:geo, material:mat, unitH:h});
     }catch(e){ console.warn("bush mesh load failed",fn,e); }
   }
@@ -1134,6 +1165,7 @@ function buildGrass(){
   tex.colorSpace=THREE.SRGBColorSpace;
   const mat=new THREE.MeshLambertMaterial({map:tex,transparent:true,alphaTest:0.4,
     side:THREE.DoubleSide,depthWrite:true,fog:true});
+  addWind(mat,{amp:0.13,speed:1.8,base:0.05,heightRef:0.45});
   // one tuft = two crossed quads merged into a single geometry
   const q1=new THREE.PlaneGeometry(0.7,0.5); q1.translate(0,0.25,0);
   const q2=q1.clone(); q2.rotateY(Math.PI/2);
@@ -1809,6 +1841,7 @@ function buildParkingLot(){
   const grassTex=new THREE.TextureLoader().load("./assets/textures/grass_tuft.png");
   grassTex.colorSpace=THREE.SRGBColorSpace;
   const grassMat=new THREE.MeshLambertMaterial({map:grassTex,transparent:true,alphaTest:0.35,side:THREE.DoubleSide,fog:true});
+  addWind(grassMat,{amp:0.11,speed:1.9,base:0.04,heightRef:0.38});
   const q1=new THREE.PlaneGeometry(0.55,0.42); q1.translate(0,0.21,0);
   const q2=q1.clone(); q2.rotateY(Math.PI/2);
   const tuftGeo=mergeGeometries([q1,q2]);
@@ -2406,6 +2439,7 @@ function updateBranchHold(dt,held){
 }
 function update(dt){
   const p=Game.player;
+  U_TIME.value += dt;          // drives all foliage wind
   // look
   const pad=Input.pad();
   const sens=0.0023;
@@ -2419,6 +2453,7 @@ function update(dt){
   if(Input.held.has("left"))mx-=1; if(Input.held.has("right"))mx+=1;
   mx+=Input.stick.x+pad.mx; mz+=Input.stick.y+pad.mz;
   const ml=Math.hypot(mx,mz); if(ml>1){mx/=ml;mz/=ml;}
+  p.moveAmt=ml; p.strafe=mx;          // for camera bob / strafe-lean in render
   const sp=3.1;
   const sy=Math.sin(p.yaw),cy=Math.cos(p.yaw);
   p.x+=(-sy*-mz + cy*mx)*sp*dt;
@@ -2474,17 +2509,63 @@ function update(dt){
     Game.timecode+=dt*30; // lazy evening clock
   }
 }
+// Drifting motes / falling debris that hang in the air and catch the flashlight.
+// The field stays centred on the player and wraps, so it feels infinite & alive.
+const Atmosphere={
+  pts:null, vel:null, N:360, box:48, topY:7.0,
+  build(){
+    const N=this.N, pos=new Float32Array(N*3); this.vel=new Float32Array(N*2);
+    const h=this.box/2;
+    for(let i=0;i<N;i++){
+      pos[i*3]=R(-h,h); pos[i*3+1]=R(0.2,this.topY); pos[i*3+2]=R(-h,h);
+      this.vel[i*2]=R(-0.12,0.12); this.vel[i*2+1]=R(0.06,0.30);
+    }
+    const g=new THREE.BufferGeometry();
+    g.setAttribute("position",new THREE.BufferAttribute(pos,3));
+    const m=new THREE.PointsMaterial({color:0x9aa39b,size:0.05,sizeAttenuation:true,
+      transparent:true,opacity:0.45,depthWrite:false,fog:true,blending:THREE.AdditiveBlending});
+    this.pts=new THREE.Points(g,m); this.pts.frustumCulled=false;
+    scene.add(this.pts);
+  },
+  tick(p){
+    if(!this.pts) return;
+    const pos=this.pts.geometry.attributes.position.array, N=this.N, h=this.box/2, t=U_TIME.value;
+    for(let i=0;i<N;i++){
+      pos[i*3]   += (this.vel[i*2]+Math.sin(t*0.6+i)*0.05)*0.016;
+      pos[i*3+1] -= this.vel[i*2+1]*0.016;
+      if(pos[i*3+1]<0.05) pos[i*3+1]+=this.topY;
+      if(pos[i*3]> h) pos[i*3]-=this.box; else if(pos[i*3]<-h) pos[i*3]+=this.box;
+      if(pos[i*3+2]> h) pos[i*3+2]-=this.box; else if(pos[i*3+2]<-h) pos[i*3+2]+=this.box;
+    }
+    this.pts.position.set(p.x,0,p.z);
+    this.pts.geometry.attributes.position.needsUpdate=true;
+  }
+};
+
+let flashDirCur=null;
+const _fwd=new THREE.Vector3(), _sway=new THREE.Vector3();
 function render(){
   const p=Game.player;
   if(skyDome) skyDome.position.set(p.x,0,p.z);
-  const bobY=Math.sin(p.bob)*0.045, bobX=Math.cos(p.bob*0.5)*0.02;
+  // camera feel: walk bob blends into a slow idle breathing sway when standing still,
+  // plus a subtle lean into strafing for weight.
+  p.breath=(p.breath||0)+0.016;
+  const walk=clamp(p.moveAmt||0,0,1);
+  const bobY=Math.sin(p.bob)*0.045*walk + Math.sin(p.breath*1.5)*0.011*(1-walk);
+  const bobX=Math.cos(p.bob*0.5)*0.025*walk + Math.sin(p.breath*0.9)*0.006*(1-walk);
+  const targetRoll=(p.strafe||0)*0.04 + Math.sin(p.bob*0.5)*0.012*walk;
+  p.roll=lerp(p.roll||0,targetRoll,0.12);
   camera.position.set(p.x+bobX,p.y+bobY,p.z);
   camera.rotation.order="YXZ";
-  camera.rotation.y=p.yaw; camera.rotation.x=p.pitch;
-  // flashlight follows with slight lag
+  camera.rotation.y=p.yaw; camera.rotation.x=p.pitch; camera.rotation.z=p.roll;
+  // flashlight follows with smoothed hand-lag + a faint breathing sway
   flashlight.position.copy(camera.position);
-  const fwd=new THREE.Vector3(0,0,-1).applyEuler(camera.rotation);
-  flashTarget.position.copy(camera.position).addScaledVector(fwd,8);
+  _fwd.set(0,0,-1).applyEuler(camera.rotation);
+  if(!flashDirCur) flashDirCur=_fwd.clone();
+  flashDirCur.lerp(_fwd,0.18).normalize();
+  _sway.set(Math.sin(p.breath*1.3)*0.06,Math.cos(p.breath*1.1)*0.05,0).applyEuler(camera.rotation);
+  flashTarget.position.copy(camera.position).addScaledVector(flashDirCur,8).add(_sway);
+  Atmosphere.tick(p);
   renderer.render(scene,camera);
 }
 
@@ -2505,6 +2586,7 @@ async function boot(){
   const trees=buildTrees();
   buildBushes();
   buildGrass();
+  Atmosphere.build();
   padBackdropCorners();
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
