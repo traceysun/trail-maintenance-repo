@@ -785,10 +785,10 @@ function buildGroundAndPath(curve){
     let tx=q.x-p.x,tz=q.z-p.z;const tl=Math.hypot(tx,tz)||1;tx/=tl;tz/=tl;
     const nx=-tz,nz=tx;
     pos.push(p.x+nx*w,0.015,p.z+nz*w, p.x-nx*w,0.015,p.z-nz*w);
-    // UVs in real-world units (~1 tile per 4m) so the dirt matches the floor's
-    // texel density instead of stretching along the ribbon
+    // UVs in real-world units (~1 tile per 1.6m) so the dirt reads as detailed
+    // trail surface instead of a stretched lengthwise slice
     if(i>0){ const pp=pts[Math.min(i-1,N-1)]; runLen+=Math.hypot(p.x-pp.x,p.z-pp.z); }
-    const vrun=runLen/4.0, urep=(w*2)/4.0;
+    const TILE=1.6, vrun=runLen/TILE, urep=(w*2)/TILE;
     uv.push(0,vrun, urep,vrun);
     if(i<N){const a=i*2;idx.push(a,a+1,a+2, a+1,a+3,a+2);}
   }
