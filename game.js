@@ -904,6 +904,7 @@ const PROP_DEFS=[
   {key:"woodpile",file:"prop_woodpile.glb"},
   {key:"mushroom",file:"prop_mushroom.glb"},
   {key:"shrub",   file:"prop_shrub.glb", wind:true},
+  {key:"signpost",file:"prop_signpost.glb"},
 ];
 async function loadProps(){
   const loader=new GLTFLoader();
@@ -961,6 +962,7 @@ function scatterProps(){
   placePropScatter("shrub",   {count:38, targetH:1.0, near:2.5,far:34});
   placePropScatter("barrel",  {count:5,  targetH:0.9, near:3,  far:18, collide:true});
   placePropScatter("woodpile",{count:5,  targetH:0.7, near:3,  far:18, collide:true});
+  placePropScatter("signpost",{count:7,  targetH:1.3, near:1.8,far:7,  collide:true, minScale:0.9,maxScale:1.15});
 }
 
 // ---- fallen log mesh (GLB), used for the blocking branches on the path ----
