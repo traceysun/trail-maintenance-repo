@@ -1729,9 +1729,18 @@ function buildTrailhead(){
 // with the trailhead sign marking where the lot meets the trees.
 function buildParkingLot(){
   const cz=14;                 // lot center z
-  // gravel pad
-  const lot=new THREE.Mesh(new THREE.PlaneGeometry(30,18),MATS.gravel);
-  lot.rotation.x=-Math.PI/2; lot.position.set(1.6,0.0,cz); scene.add(lot);
+  // gravel pad — edges feathered (alpha fade) so it blends into the forest floor
+  // instead of ending in a hard rectangular seam.
+  const fade=document.createElement("canvas"); fade.width=fade.height=128;
+  { const x=fade.getContext("2d");
+    const g=x.createRadialGradient(64,64,28,64,64,64);
+    g.addColorStop(0,"#fff"); g.addColorStop(0.62,"#fff"); g.addColorStop(1,"#000");
+    x.fillStyle=g; x.fillRect(0,0,128,128); }
+  const lotMat=MATS.gravel.clone();
+  lotMat.alphaMap=new THREE.CanvasTexture(fade);
+  lotMat.transparent=true; lotMat.depthWrite=false;
+  const lot=new THREE.Mesh(new THREE.PlaneGeometry(30,18),lotMat);
+  lot.rotation.x=-Math.PI/2; lot.position.set(1.6,0.0,cz); lot.renderOrder=1; scene.add(lot);
   const stripeMat=new THREE.MeshBasicMaterial({color:0x8b826c,transparent:true,opacity:0.24,side:THREE.DoubleSide});
   for(let i=-2;i<=2;i++){
     const sx=1.6+i*3.2;
