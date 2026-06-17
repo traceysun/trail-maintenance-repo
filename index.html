@@ -36,6 +36,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"C
 #toast{left:50%;top:30%;transform:translateX(-50%);font-size:14px;letter-spacing:1px;opacity:0;transition:opacity .8s;font-style:italic}
 #radioline{left:50%;bottom:14%;transform:translateX(-50%);font-size:14px;letter-spacing:3px;opacity:0;color:#cfd6c8}
 #dot{position:fixed;left:50%;top:50%;width:3px;height:3px;margin:-1px;background:rgba(216,203,168,.7);z-index:10;border-radius:50%}
+/* faint trail GPS, bottom-left — readable but recessed */
+#gps{position:fixed;left:14px;bottom:16px;width:138px;height:138px;z-index:10;opacity:0;
+  pointer-events:none;transition:opacity 1.4s ease 1.2s;
+  filter:drop-shadow(0 0 5px rgba(0,0,0,.5))}
+#gps.on{opacity:.42}
 /* ---------- reading overlay ---------- */
 #read{position:fixed;inset:0;z-index:20;display:none;background:rgba(4,6,7,.78);backdrop-filter:blur(1px)}
 #readpaper{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(-.6deg);
@@ -92,6 +97,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"C
 <div class="hud" id="toast"></div>
 <div class="hud" id="radioline"></div>
 <div id="dot"></div>
+<canvas id="gps" width="160" height="160"></canvas>
 <div id="read"><div id="readpaper"></div><div id="readclose"></div></div>
 <div id="fade"></div>
 <div id="ending"><div class="in"><div id="endtitle"></div><div id="endtext"></div><button id="endbtn"></button></div></div>
@@ -102,6 +108,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0b0e10;font-family:"C
 <div id="stick"><div id="nub"></div></div>
 <div class="tbtn" id="btnE">E</div><div class="tbtn" id="btnF">⚲</div>
 <div id="dev"></div>
-<script type="module" src="./game.js?v=no-local-car"></script>
+<script type="module" src="./game.js?v=gps"></script>
 </body>
 </html>

@@ -2441,6 +2441,52 @@ const Atmosphere={
   }
 };
 
+// Subtle bottom-left trail GPS: the route as a faint line, a heading arrow for the
+// player, and a soft pulsing blip on the current objective's landmark. Hidden on
+// touch (the joystick lives bottom-left there).
+const GPS={
+  cv:null, ctx:null, b:null,
+  TARGETS:{ intro:-92, shed:-92, outpost:-168, erase:-200, clearing:-200, lost:18, return:7 },
+  init(){
+    this.cv=$("gps"); if(!this.cv) return;
+    if(IS_TOUCH){ this.cv.style.display="none"; return; }
+    this.ctx=this.cv.getContext("2d");
+    let minx=1e9,maxx=-1e9,minz=1e9,maxz=-1e9;
+    for(const p of pathSamples){ minx=Math.min(minx,p.x);maxx=Math.max(maxx,p.x);minz=Math.min(minz,p.z);maxz=Math.max(maxz,p.z); }
+    const pad=7; this.b={minx:minx-pad,maxx:maxx+pad,minz:minz-pad,maxz:maxz+pad};
+    this.cv.classList.add("on");
+  },
+  draw(){
+    const ctx=this.ctx, b=this.b; if(!ctx||!b) return;
+    const W=this.cv.width, H=this.cv.height, m=14;
+    const sx=v=>m+((v-b.minx)/(b.maxx-b.minx))*(W-2*m);
+    const sz=v=>m+((b.maxz-v)/(b.maxz-b.minz))*(H-2*m);   // +z (start) top, -z (clearing) bottom
+    ctx.clearRect(0,0,W,H);
+    // worn backing
+    ctx.beginPath(); if(ctx.roundRect) ctx.roundRect(2,2,W-4,H-4,12); else ctx.rect(2,2,W-4,H-4);
+    ctx.fillStyle="rgba(10,13,14,.5)"; ctx.fill();
+    ctx.lineWidth=1; ctx.strokeStyle="rgba(216,203,168,.22)"; ctx.stroke();
+    // trail
+    ctx.beginPath();
+    for(let i=0;i<pathSamples.length;i++){ const p=pathSamples[i],X=sx(p.x),Y=sz(p.z); i?ctx.lineTo(X,Y):ctx.moveTo(X,Y); }
+    ctx.strokeStyle="rgba(216,203,168,.5)"; ctx.lineWidth=2; ctx.lineJoin="round"; ctx.stroke();
+    // objective blip
+    const tz=this.TARGETS[Game.phase];
+    if(tz!==undefined){
+      const ox=sx(pathX(tz)), oy=sz(tz), pulse=0.5+0.5*Math.sin(U_TIME.value*3);
+      ctx.beginPath(); ctx.arc(ox,oy,4+pulse*3.5,0,6.2832);
+      ctx.strokeStyle=`rgba(179,38,30,${0.25+0.4*pulse})`; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.beginPath(); ctx.arc(ox,oy,2,0,6.2832); ctx.fillStyle="rgba(179,38,30,.9)"; ctx.fill();
+    }
+    // player heading arrow
+    const p=Game.player, px=sx(p.x), py=sz(p.z);
+    const ang=Math.atan2(Math.cos(p.yaw),-Math.sin(p.yaw));   // world heading -> canvas
+    ctx.save(); ctx.translate(px,py); ctx.rotate(ang);
+    ctx.beginPath(); ctx.moveTo(5,0); ctx.lineTo(-3.2,3); ctx.lineTo(-3.2,-3); ctx.closePath();
+    ctx.fillStyle="rgba(236,226,196,.95)"; ctx.fill(); ctx.restore();
+  }
+};
+
 let flashDirCur=null;
 const _fwd=new THREE.Vector3(), _sway=new THREE.Vector3();
 function render(){
@@ -2465,6 +2511,7 @@ function render(){
   _sway.set(Math.sin(p.breath*1.3)*0.06,Math.cos(p.breath*1.1)*0.05,0).applyEuler(camera.rotation);
   flashTarget.position.copy(camera.position).addScaledVector(flashDirCur,8).add(_sway);
   Atmosphere.tick(p);
+  GPS.draw();
   renderer.render(scene,camera);
 }
 
@@ -2476,6 +2523,7 @@ async function boot(){
   $("ctl").textContent=IS_TOUCH?STR.controlsTouch:STR.controlsDesktop;
   initRenderer(); Input.init($("c")); buildTextures(); buildMaterials();
   const curve=buildPathLookup();
+  GPS.init();
   buildGroundAndPath(curve);
   await loadTreeMesh();
   await loadBuildingMeshes();
