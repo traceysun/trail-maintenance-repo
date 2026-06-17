@@ -1976,6 +1976,15 @@ function buildWhiteMarkers(trees){
     whiteMarkers.push(it);
   }
 }
+// Fresh blazes past the ranger outpost, guiding the player on toward the clearing
+// (the stretch with no tasks). Visible on both sides so the route reads clearly.
+function buildWayMarkers(trees){
+  const Z=[-174,-180,-187,-194,-199];
+  for(const z of Z){
+    const t=nearestTree(trees,pathX(z),z,2.2,9);
+    if(t) markerOnTree(t,z+6,MATS.markerWhite);
+  }
+}
 function buildRedMarkers(trees){
   // wrong places: back of a tree, too high, on a rock, under the bridge, by the shed, by the entrance
   const defs=[];
@@ -2550,7 +2559,7 @@ async function boot(){
   padBackdropCorners();
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
-  buildBranches(); buildWhiteMarkers(trees); buildRedMarkers(trees);
+  buildBranches(); buildWhiteMarkers(trees); buildRedMarkers(trees); buildWayMarkers(trees);
   UI.refresh(); UI.clock();
   $("beginbtn").textContent=STR.begin;
   Game.state="start";
