@@ -1055,6 +1055,54 @@ function placeParkSignPair(x,z,ry,targetW){
   addBoxCol(x,z,targetW+0.6,0.95,ry);
   return g;
 }
+
+// ---- carved wooden directional sign, revealed after the outpost ----
+let WAY_SIGN_GLB=null;
+const WAY_SIGN_GLB_URLS=["./assets/models/trail_sign.glb"];
+async function loadWaySignMesh(){
+  for(const url of WAY_SIGN_GLB_URLS){
+    try{
+      const response=await fetch(url,{cache:"no-store"});
+      if(!response.ok) continue;
+      const objectUrl=URL.createObjectURL(await response.blob());
+      const gltf=await new Promise((res,rej)=>{ new GLTFLoader().load(objectUrl,res,undefined,rej); }).finally(()=>URL.revokeObjectURL(objectUrl));
+      const root=gltf.scene; root.updateWorldMatrix(true,true);
+      const bb=new THREE.Box3().setFromObject(root);
+      const center=new THREE.Vector3((bb.min.x+bb.max.x)/2,bb.min.y,(bb.min.z+bb.max.z)/2);
+      root.position.sub(center); root.updateWorldMatrix(true,true);
+      const dims={w:bb.max.x-bb.min.x,h:bb.max.y-bb.min.y,d:bb.max.z-bb.min.z};
+      root.traverse(o=>{ if(o.isMesh&&o.material){ const mats=Array.isArray(o.material)?o.material:[o.material];
+        for(const mat of mats){ mat.fog=true; if("roughness"in mat)mat.roughness=Math.min(1.0,mat.roughness??0.95); if("metalness"in mat)mat.metalness=Math.min(0.08,mat.metalness??0.0); mat.side=THREE.DoubleSide; } }});
+      WAY_SIGN_GLB={root,dims}; return;
+    }catch(e){ console.warn("way sign GLB load failed",url,e); }
+  }
+  WAY_SIGN_GLB=null;
+}
+let waySign=null;
+function buildWaySign(){
+  const z=-173, x=pathX(z)+1.9;                 // just off the path, past the outpost
+  const faceYaw=Math.atan2(pathX(z+6)-x,(z+6)-z); // front toward the approaching player
+  const grp=new THREE.Group();
+  if(WAY_SIGN_GLB){
+    const g=WAY_SIGN_GLB.root.clone(true);
+    const k=1.7/(WAY_SIGN_GLB.dims.h||1);        // ~1.7m tall
+    g.scale.setScalar(k); g.updateWorldMatrix(true,true);
+    const bb=new THREE.Box3().setFromObject(g); g.position.y+=-bb.min.y;
+    grp.add(g);
+  } else {
+    // procedural fallback so wayfinding works even without the GLB
+    const post=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.09,1.5,8),MATS.woodDark); post.position.y=0.75; grp.add(post);
+    const plank=new THREE.Mesh(new THREE.BoxGeometry(0.95,0.32,0.06),MATS.planks); plank.position.set(0.18,1.22,0); grp.add(plank);
+    const tip=new THREE.Mesh(new THREE.ConeGeometry(0.2,0.34,3),MATS.planks); tip.rotation.z=-Math.PI/2; tip.position.set(0.78,1.22,0); grp.add(tip);
+  }
+  grp.position.set(x,0,z); grp.rotation.y=faceYaw; grp.visible=false;
+  scene.add(grp); waySign=grp;
+}
+function revealWaySign(){
+  if(!waySign||waySign.visible) return;
+  waySign.visible=true;
+  AudioSys.creak(waySign.position.x,waySign.position.z);
+}
 function makeFallenLog(length=4.4, radius=0.36, seed=0){
   const group=new THREE.Group();
   const barkMat=new THREE.MeshStandardMaterial({color:0x3a3025,roughness:0.96,metalness:0.0,flatShading:true});
@@ -2179,7 +2227,7 @@ const Phases={
     }});
   },
   toErase(){
-    Game.phase="erase"; revealRedMarkers();
+    Game.phase="erase"; revealRedMarkers(); revealWaySign();
     Game.dawnT=Game.dawnTotal;
     AudioSys.dispatch("confirmed",0.6);
     UI.toast(STR.toastRedFound); UI.glitch(); UI.refresh();
@@ -2551,6 +2599,7 @@ async function boot(){
   await loadProps();
   await loadLogMesh();
   await loadParkSignMesh();
+  await loadWaySignMesh();
   const trees=buildTrees();
   buildBushes();
   buildGrass();
@@ -2559,6 +2608,7 @@ async function boot(){
   padBackdropCorners();
   buildParkingLot();
   buildTrailhead(); buildShed(); buildOutpost(); buildBridge(); buildCabin(); buildFigure();
+  buildWaySign();
   buildBranches(); buildWhiteMarkers(trees); buildRedMarkers(trees); buildWayMarkers(trees);
   UI.refresh(); UI.clock();
   $("beginbtn").textContent=STR.begin;
