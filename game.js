@@ -755,7 +755,9 @@ function buildMaterials(){
   MATS.dark=new THREE.MeshBasicMaterial({color:0x07090a});
   MATS.paper=new THREE.MeshLambertMaterial({color:0xcfc6ae});
   MATS.can=new THREE.MeshLambertMaterial({color:0x8a3026,flatShading:true});
-  MATS.water=new THREE.MeshLambertMaterial({color:0x10181c});
+  // Dark creek water — low roughness + slight metalness so the flashlight/moon
+  // glint off it and it reads as wet water rather than a flat untextured patch.
+  MATS.water=new THREE.MeshStandardMaterial({color:0x0b1519,roughness:0.2,metalness:0.25});
   MATS.leafA=new THREE.MeshLambertMaterial({color:0x3c2b18,side:THREE.DoubleSide});
   MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
   MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
