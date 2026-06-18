@@ -621,7 +621,7 @@ function initRenderer(){
   renderer.setSize(innerWidth,innerHeight);
   scene=new THREE.Scene();
   scene.background=new THREE.Color(0x0a0d0f);
-  scene.fog=new THREE.FogExp2(0x141a1c,0.060);
+  scene.fog=new THREE.FogExp2(0x141a1c,0.042);
   // Dark gradient sky dome: near-black overhead, lightening only to the fog color
   // at the horizon, so the tops of the trees dissolve into darkness and you can't
   // read where the canopy ends.
@@ -758,15 +758,6 @@ function buildMaterials(){
   // Dark creek water — low roughness + slight metalness so the flashlight/moon
   // glint off it and it reads as wet water rather than a flat untextured patch.
   MATS.water=new THREE.MeshStandardMaterial({color:0x0b1519,roughness:0.2,metalness:0.25});
-  // TEMP DIAGNOSTIC: flat full-bright unlit colors so each ground surface is
-  // unmistakable regardless of night lighting/fog. Remove after.
-  const DEBUG_GROUND=true;
-  if(DEBUG_GROUND){
-    for(const [m,c] of [[MATS.floor,0x2fbf3a],[MATS.dirt,0x3a5cff],[MATS.gravel,0xff3322],[MATS.water,0x16e0ff]]){
-      m.color.setHex(0x000000); m.emissive.setHex(c); m.emissiveIntensity=1;
-      m.map=null; m.normalMap=null; m.fog=false;
-    }
-  }
   MATS.leafA=new THREE.MeshLambertMaterial({color:0x3c2b18,side:THREE.DoubleSide});
   MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
   MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
