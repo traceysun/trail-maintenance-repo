@@ -758,6 +758,10 @@ function buildMaterials(){
   // Dark creek water — low roughness + slight metalness so the flashlight/moon
   // glint off it and it reads as wet water rather than a flat untextured patch.
   MATS.water=new THREE.MeshStandardMaterial({color:0x0b1519,roughness:0.2,metalness:0.25});
+  // TEMP DIAGNOSTIC: color-code ground surfaces to identify the seam. Remove after.
+  const DEBUG_GROUND=true;
+  if(DEBUG_GROUND){ MATS.floor.color.setHex(0x2fbf3a); MATS.dirt.color.setHex(0x3a5cff);
+    MATS.gravel.color.setHex(0xff3322); MATS.water.color.setHex(0x16e0ff); }
   MATS.leafA=new THREE.MeshLambertMaterial({color:0x3c2b18,side:THREE.DoubleSide});
   MATS.leafB=new THREE.MeshLambertMaterial({color:0x5a4326,side:THREE.DoubleSide});
   MATS.weed=new THREE.MeshLambertMaterial({color:0x2f4b2e,side:THREE.DoubleSide});
