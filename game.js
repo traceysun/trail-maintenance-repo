@@ -641,9 +641,11 @@ function initRenderer(){
     scene.add(skyDome);
   }
   camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,160);
-  hemi=new THREE.HemisphereLight(0x2c3a44,0x141009,0.55); scene.add(hemi);
+  hemi=new THREE.HemisphereLight(0x2c3a44,0x141009,0.68); scene.add(hemi);
   moon=new THREE.DirectionalLight(0x4a5666,0.22); moon.position.set(-20,40,-10); scene.add(moon);
-  flashlight=new THREE.SpotLight(0xffe9bd,0,32,0.55,0.5,1.2);
+  // Wide angle + full penumbra so the flashlight pool fades out with no hard cone
+  // edge on the ground (that edge was the "ground seam").
+  flashlight=new THREE.SpotLight(0xffe9bd,0,40,0.85,1.0,1.0);
   flashTarget=new THREE.Object3D();
   scene.add(flashlight); scene.add(flashTarget); flashlight.target=flashTarget;
   addEventListener("resize",()=>{ renderer.setSize(innerWidth,innerHeight);
