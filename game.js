@@ -620,8 +620,10 @@ function initRenderer(){
   renderer.setPixelRatio(Math.min(devicePixelRatio||1,1)*0.55); // low internal res = PS1 + perf
   renderer.setSize(innerWidth,innerHeight);
   scene=new THREE.Scene();
-  scene.background=new THREE.Color(0x0a0d0f);
-  scene.fog=new THREE.FogExp2(0x141a1c,0.042);
+  // Fog, background and sky-horizon share ONE dark color so the flat ground melts
+  // into the distance with no contrast band at the tree line.
+  scene.background=new THREE.Color(0x0d1012);
+  scene.fog=new THREE.FogExp2(0x0d1012,0.05);
   // Dark gradient sky dome: near-black overhead, lightening only to the fog color
   // at the horizon, so the tops of the trees dissolve into darkness and you can't
   // read where the canopy ends.
@@ -629,7 +631,7 @@ function initRenderer(){
     const skyGeo=new THREE.SphereGeometry(150,24,12);
     const skyMat=new THREE.ShaderMaterial({
       side:THREE.BackSide, depthWrite:false, fog:false,
-      uniforms:{ top:{value:new THREE.Color(0x020304)}, bottom:{value:new THREE.Color(0x141a1c)} },
+      uniforms:{ top:{value:new THREE.Color(0x020304)}, bottom:{value:new THREE.Color(0x0d1012)} },
       vertexShader:`varying float vy; void main(){ vy=normalize(position).y; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
       fragmentShader:`varying float vy; uniform vec3 top; uniform vec3 bottom;
         void main(){ float t=clamp(vy*2.4+0.02,0.0,1.0); t=pow(t,0.85); gl_FragColor=vec4(mix(bottom,top,t),1.0); }`
